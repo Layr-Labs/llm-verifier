@@ -10,6 +10,7 @@ from .errors import VerifierError
 from .files import snapshot
 from .jsonutil import canonical, digest, keys, loads, sha
 from .submission import manifest_from
+from .scoring import validate_objective_claims
 
 HASH = re.compile(r"[a-f0-9]{64}\Z")
 
@@ -47,6 +48,7 @@ def intake_snapshot(effective, candidate_root, context=None, simulation=False):
     verify_effective(effective)
     files = snapshot(candidate_root, effective["config"]["limits"])
     manifest = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
+    validate_objective_claims(effective["config"]["objectives"], manifest["claims"])
     code = implementation()
     context = context or {"kind": "local", "revision": "unasserted; use content hash"}
     bindings = {"evaluation_id": uuid.uuid4().hex, "config": digest(effective),
@@ -62,6 +64,7 @@ def verify_intake(intake, expected=None):
     keys(data, {"effective", "files", "manifest", "implementation", "context"})
     verify_effective(data["effective"])
     manifest = manifest_from(data["files"], data["effective"]["config"]["limits"], data["effective"]["config"].get("checkers", []))
+    validate_objective_claims(data["effective"]["config"]["objectives"], manifest["claims"])
     if canonical(manifest) != canonical(data["manifest"]):
         raise VerifierError("manifest_binding")
     bindings = intake["bindings"]

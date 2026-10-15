@@ -57,6 +57,11 @@ class Authoring(unittest.TestCase):
             scaffold.github(root, 'owner/verifier', 'a'*40)
             workflow=(root/'.github/workflows/benchmark.yml').read_text()
             self.assertEqual(workflow.count('a'*40), 2)
+            checker_workflow=(root/'.github/workflows/checker-tests.yml').read_text()
+            self.assertEqual(checker_workflow.count('a'*40),2)
+            self.assertIn('on: [push, pull_request, workflow_dispatch]',checker_workflow)
+            self.assertIn('owner/verifier/.github/workflows/test-checkers.yml@',checker_workflow)
+            self.assertNotIn('OPENROUTER_API_KEY',checker_workflow)
             benchmark=read_json(root/'benchmark.json'); benchmark['tracks'][0]['description']='Human description'
             write_json(root/'benchmark.json',benchmark)
             self.assertTrue(scaffold.check(root)['valid'])
@@ -66,6 +71,7 @@ class Authoring(unittest.TestCase):
                 scaffold.check(root)
             scaffold.github(root,'owner/verifier','b'*40)
             self.assertTrue(scaffold.check(root)['valid'])
+            self.assertEqual((root/'.github/workflows/checker-tests.yml').read_text().count('b'*40),2)
             for repo, revision in [('owner/repo;bad', 'a'*40), ('owner/repo','master')]:
                 with self.assertRaisesRegex(VerifierError, 'immutable_verifier_pin'):
                     scaffold.github(root,repo,revision)

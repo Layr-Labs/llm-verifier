@@ -16,7 +16,7 @@ Required fields:
 | `id` | Unique bounded ASCII challenge identifier |
 | `rules_path` | Bounded relative POSIX path to UTF-8 rules, outside submission |
 | `review_standard` | Exact label required in every judgment |
-| `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics` |
+| `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source` and exact `score_minimum` ([authoring](authoring.md#score-sources)) |
 | `allow_unscored` | Whether valid partial work can have `scores: null` |
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |

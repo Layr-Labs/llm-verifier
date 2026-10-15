@@ -110,3 +110,27 @@ rejects a scorePath that would overwrite any declared protected checker file.
 [Checker source snapshots, shared budgets and the numeric score gate](checkers.md)
 are validated through the existing intake/phase artifact channel. No checker
 source executes in a credentialed review job.
+
+## Automatic challenge checker CI
+
+`llm-verifier github` also generates a small push/pull-request/workflow-dispatch
+caller of `.github/workflows/test-checkers.yml`. Its workflow and source pin
+must match exactly, as for the benchmark. It validates the challenge and runs
+`checker-tests.json` using the production `test-checkers` command; it does not
+call a model or run participant-declared experiments.
+
+Only the preparation job checks out repositories. Both checkouts disable
+credential persistence; the optional read-only `VERIFIER_CHECKOUT_TOKEN` is
+used only for verifier checkout. The prepare job verifies exact clean revisions,
+builds a wheel and archives the challenge's Git tree. A separate job with no
+supplied secrets and empty GitHub-token permissions installs that wheel,
+restores the source, explicitly prepares the pinned Docker image, and runs
+checks with a process environment containing only PATH. There is no second
+checker runner or model secret in this workflow.
+
+Configure reusable-workflow access and cross-repository read credentials before
+expecting a green check. A missing credential/access grant is an infrastructure
+failure, not a skipped or successful checker run. Fork PRs do not receive caller
+secrets; use an organizer-controlled branch for those changes without switching
+to `pull_request_target`. The workflow supports one checker caller per run, with
+one artifact namespace and a 15-minute execution-job limit.

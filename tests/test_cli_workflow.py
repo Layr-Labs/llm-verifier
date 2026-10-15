@@ -78,15 +78,38 @@ class Workflow(unittest.TestCase):
     def test_workflow_pin_guard_rejects_mismatch_without_checkout(self):
         # Execute the actual bootstrap shell block with dummy trusted identities;
         # no git, network or credentials are involved.
-        lines=(REPO/'.github/workflows/verify.yml').read_text().splitlines()
-        begin=next(i for i,line in enumerate(lines) if line=='        run: |')+1
-        block=[]
-        for line in lines[begin:]:
-            if line and not line.startswith('          '):break
-            block.append(line[10:])
-        script='\n'.join(block)
-        for match in (True,False):
-            sha='a'*40
-            env={**os.environ,'VERIFIER_REVISION':sha,'VERIFIER_REPOSITORY':'organizer/verifier','CALLED_WORKFLOW':json.dumps({'workflow_repository':'organizer/verifier','workflow_sha':sha if match else 'b'*40})}
-            result=subprocess.run(['bash','-eu','-o','pipefail','-c',script],env=env,capture_output=True,text=True)
-            self.assertEqual(result.returncode==0,match,result.stderr)
+        for workflow in ('verify.yml','test-checkers.yml'):
+            lines=(REPO/'.github/workflows'/workflow).read_text().splitlines()
+            begin=next(i for i,line in enumerate(lines) if line=='        run: |')+1
+            block=[]
+            for line in lines[begin:]:
+                if line and not line.startswith('          '):break
+                block.append(line[10:])
+            script='\n'.join(block)
+            for match in (True,False):
+                sha='a'*40
+                env={**os.environ,'VERIFIER_REVISION':sha,'VERIFIER_REPOSITORY':'organizer/verifier','CALLED_WORKFLOW':json.dumps({'workflow_repository':'organizer/verifier','workflow_sha':sha if match else 'b'*40})}
+                result=subprocess.run(['bash','-eu','-o','pipefail','-c',script],env=env,capture_output=True,text=True)
+                self.assertEqual(result.returncode==0,match,result.stderr)
+
+    def test_checker_workflow_separates_checkout_from_execution(self):
+        text=(REPO/'.github/workflows/test-checkers.yml').read_text()
+        prepare,execution=text.split('  checkers:',1)
+        self.assertEqual(prepare.count('persist-credentials: false'),2)
+        self.assertNotIn('test-checkers --root',prepare)
+        self.assertNotIn('secrets.',execution)
+        self.assertNotIn('actions/checkout',execution)
+        self.assertNotIn('OPENROUTER',text)
+        self.assertNotIn('pull_request_target',text)
+        self.assertIn('permissions: {}',execution)
+        self.assertIn('env -i PATH="$PATH" "$cli" test-checkers --root "$root"',execution)
+        self.assertIn('prepare-runtime --phase followup',execution)
+        self.assertIn('checkout_revision(workspace / "challenge"',prepare)
+        self.assertIn('checkout_revision(workspace / "verifier"',prepare)
+        for action in re.findall(r'uses: (actions/[^\s]+)',text):
+            self.assertRegex(action,r'^actions/[a-z-]+@[a-f0-9]{40}$')
+        in_run=False
+        for line in text.splitlines():
+            if line.startswith('        run: |'):in_run=True
+            elif in_run and line and not line.startswith('          '):in_run=False
+            if in_run:self.assertNotIn('${{',line)

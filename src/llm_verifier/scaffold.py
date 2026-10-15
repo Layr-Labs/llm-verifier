@@ -121,10 +121,14 @@ def github(root, repository, revision):
     effective = load_config(root, "verifier.json", "submission")
     if not effective["config"]["objectives"]:
         raise VerifierError("yukon_requires_objective")
-    workflow = read_bytes(TEMPLATES / "benchmark.yml").decode().replace("VERIFIER_REPOSITORY", repository).replace("VERIFIER_REVISION", revision)
     write_bytes(Path(root) / "benchmark.json", formatted(manifest(effective["config"])))
-    write_bytes(Path(root) / ".github/workflows/benchmark.yml", workflow.encode())
-    return {"files": ["benchmark.json", ".github/workflows/benchmark.yml"], "verifier_revision": revision}
+    files = ["benchmark.json"]
+    for name in ("benchmark.yml", "checker-tests.yml"):
+        workflow = read_bytes(TEMPLATES / name).decode().replace("VERIFIER_REPOSITORY", repository).replace("VERIFIER_REVISION", revision)
+        path = ".github/workflows/" + name
+        write_bytes(Path(root) / path, workflow.encode())
+        files.append(path)
+    return {"files": files, "verifier_revision": revision}
 
 
 def test_checkers(root, *, runner=None):

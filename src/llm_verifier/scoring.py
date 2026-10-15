@@ -54,15 +54,19 @@ def validate_claim(claim, files):
         raise VerifierError("duplicate_claim_evidence")
 
 
-def meets_minimum(record, objective):
-    """Compare exact proof rationals (or numeric checker outputs), before rounding."""
-    if "score_minimum" not in objective or record == "positive_infinity":
-        return True
-    minimum = objective["score_minimum"]
-    bound = Fraction(int(minimum["numerator"]), int(minimum["denominator"]))
-    exact = (Fraction(int(record["numerator"]), int(record["denominator"]))
+def score_bound_status(record, objective):
+    """Compare exact proof rationals or numeric checker outputs before rounding."""
+    exact = (math.inf if record == "positive_infinity" else
+             Fraction(int(record["numerator"]), int(record["denominator"]))
              if type(record) is dict else Fraction(record))
-    return exact >= bound
+    for name, status in (("score_minimum", "below_minimum"), ("score_maximum", "above_maximum")):
+        if name not in objective:
+            continue
+        limit = objective[name]
+        bound = Fraction(int(limit["numerator"]), int(limit["denominator"]))
+        if (exact < bound if name == "score_minimum" else exact > bound):
+            return status
+    return "ready"
 
 
 def validate_objective_claims(objectives, claims):
@@ -73,17 +77,23 @@ def validate_objective_claims(objectives, claims):
         claim = claims[source["claim"]]
         if type(claim) is not dict:
             continue  # An unscored lemma needs no numeric declaration.
-        if not meets_minimum(claim["score"], objective):
-            raise VerifierError("score_below_minimum")
+        if claim["score"] == "positive_infinity" and objective["direction"] != "+":
+            raise VerifierError("terminal_requires_maximization")
+        status = score_bound_status(claim["score"], objective)
+        if status != "ready":
+            raise VerifierError("score_" + status)
 
 
 def validate_sources(objectives, checkers):
     for objective in objectives:
-        if "score_minimum" in objective:
-            if "score_source" not in objective:
-                raise VerifierError("score_minimum_requires_source")
-            if score_value(objective["score_minimum"]) is None:
-                raise VerifierError("finite_score_minimum_required")
+        for name in ("score_minimum", "score_maximum"):
+            if name in objective:
+                if "score_source" not in objective:
+                    raise VerifierError(name + "_requires_source")
+                if score_value(objective[name]) is None:
+                    raise VerifierError("finite_" + name + "_required")
+        if "score_maximum" in objective and score_bound_status(objective["score_maximum"], objective) != "ready":
+            raise VerifierError("objective_bounds_order")
     sources = [o.get("score_source") for o in objectives]
     if not any(s is not None for s in sources):
         return
@@ -126,8 +136,6 @@ def bindings(data, runs, required):
             if type(claim) is dict:
                 record = claim["score"]
                 value = score_value(record)
-                if value is None and objective["direction"] != "+":
-                    raise VerifierError("terminal_requires_maximization")
                 status = "ready"
         else:
             gate = by_check[source["check"]]
@@ -137,7 +145,7 @@ def bindings(data, runs, required):
                     status = "conflicting_results"
                 else:
                     record = value = values[0]
-                    status = "ready" if meets_minimum(record, objective) else "below_minimum"
+                    status = score_bound_status(record, objective)
         result.append({"objective": objective["name"], "source": source, "claim_id": claim_id,
                        "status": status, "record": record, "value": value})
     return result

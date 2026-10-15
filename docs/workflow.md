@@ -47,7 +47,10 @@ protected `root_dir` to the imported leaf path (or `.`), and use config/submissi
 score paths relative to that root. The examples' manifests refer to this filename.
 Configure `OPENROUTER_API_KEY`, and `VERIFIER_CHECKOUT_TOKEN` only if a separate
 private or internal verifier repository needs access; the caller's default token
-may not have cross-repository access.
+may not have cross-repository access. For a private/internal reusable workflow,
+its repository's **Actions → General → Access** setting must also allow the
+caller repository. A checkout token does not grant reusable-workflow access;
+`llm-verifier check` validates local files, not these GitHub settings.
 
 The caller must declare string dispatch input `yukon_evaluation`; the wrapper
 passes it to `YUKON_EVALUATION` at intake and snapshots the exact selected policies

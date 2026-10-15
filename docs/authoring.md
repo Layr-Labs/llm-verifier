@@ -38,20 +38,22 @@ That claim has a statement, exact score, and paths relative to `submission/`:
 }
 ```
 
-An objective may add an inclusive protected lower bound, for example:
+An objective may add inclusive protected `score_minimum` and `score_maximum`
+bounds, for example:
 
 ```json
 "score_source": {"claim": 0},
 "score_minimum": {"numerator": "0", "denominator": "1"}
 ```
 
-The bound is a reduced finite rational in the same format as a claim score.
-Below-bound proof claims are rejected by `check`, intake and artifact validation,
-even if a model would accept them. Comparisons use exact fractions before float
-projection. A below-bound checker result cannot authorize a score. The constraint
-requires `score_source`; omitting it preserves signed scores for other challenges.
-An accepted positive-infinity endpoint exceeds every finite minimum, and unscored
-string claims remain allowed.
+Each bound is a reduced finite rational in the same format as a claim score;
+when both are set, the minimum must not exceed the maximum. Out-of-range proof
+claims are rejected by `check`, intake and artifact validation, even if a model
+would accept them. Comparisons use exact fractions before float projection.
+An out-of-range checker result cannot authorize a score. Bounds require
+`score_source`; omitting them preserves signed scores for other challenges.
+Positive infinity exceeds every finite minimum and maximum, so a finite maximum
+excludes it. Unscored string claims remain allowed.
 
 Ordinary unscored claims remain strings. Integers in a rational are canonical
 strings of at most 256 characters; the fraction must be reduced with a positive
@@ -105,8 +107,10 @@ Run `llm-verifier check --root .`, explicitly prepare the digest-pinned image fr
 `verifier.json`, then run `llm-verifier test-checkers --root .` without model
 credentials. Tests use the production Docker runner, limits, snapshot isolation
 and cleanup. No image is pulled implicitly. The repository's collision example
-contains working cases. Keep framework protocol tests upstream; challenge tests
-should cover its scientific or computational behavior.
+contains working cases. Run self-tests when authoring or changing a checker;
+the dispatched benchmark runs the submission's checks, not the known-answer
+corpus. Keep framework protocol tests upstream; challenge tests should cover
+its scientific or computational behavior.
 
 ## Yukon and GitHub Actions
 
@@ -117,8 +121,10 @@ llm-verifier github --root my-challenge --verifier-revision FULL_40_CHARACTER_CO
 ```
 
 This writes `benchmark.json`, `.github/workflows/benchmark.yml`, and a short
-`.github/workflows/checker-tests.yml` caller for push/PR checker CI. Rerun it after
-changing objectives or policies; `check` detects a stale generated manifest.
+`.github/workflows/checker-tests.yml` caller for push/PR checker CI. Keep the
+benchmark dispatch-only: Yukon dispatches evaluations explicitly, so a
+`pull_request` benchmark trigger can evaluate the same submission twice.
+Rerun the generator after changing objectives or policies; `check` detects a stale manifest.
 Both workflow and source use the same supplied pin. Generated JSON is formatted
 for review. Configure reusable-workflow access and the checkout/model credentials
 as described in [workflow.md](workflow.md). The benchmark uses the existing separated execution/review jobs. Checker CI

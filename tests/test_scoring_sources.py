@@ -237,3 +237,96 @@ class ScoreMinimum(unittest.TestCase):
             config=copy.deepcopy(effective['config']);self.zero(config)
             del config['objectives'][0]['score_source']
             with self.assertRaisesRegex(VerifierError,'score_minimum_requires_source'):normalize(config)
+
+
+class ScoreMaximum(unittest.TestCase):
+    @staticmethod
+    def cap(config):
+        config['objectives'][0]['score_maximum'] = {'numerator': '31', 'denominator': '10'}
+
+    def test_upper_bound_rejects_at_check_intake_and_consumption(self):
+        from llm_verifier.artifacts import verify_intake
+        from llm_verifier.jsonutil import digest
+        for value in ({'numerator': '4', 'denominator': '1'}, 'positive_infinity'):
+            with self.subTest(value=value), starter(
+                    change=lambda s: s['claims'][0].update(score=value)) as (root, effective, intake):
+                self.cap(effective['config']); write_json(root/'verifier.json', effective['config'])
+                with self.assertRaisesRegex(VerifierError, 'score_above_maximum'):
+                    scaffold.check(root)
+                with self.assertRaisesRegex(VerifierError, 'score_above_maximum'):
+                    intake_snapshot(effective, root/'submission')
+                self.cap(intake['data']['effective']['config'])
+                intake['bindings']['config'] = digest(intake['data']['effective'])
+                with self.assertRaisesRegex(VerifierError, 'score_above_maximum'):
+                    verify_intake(reseal(intake))
+        value = {'numerator': '9007199254740993', 'denominator': '9007199254740992'}
+        self.assertEqual(score_value(value), 1.0)
+        with self.assertRaisesRegex(VerifierError, 'score_above_maximum'):
+            with starter(change=lambda s: s['claims'][0].update(score=value),
+                         configure=lambda c: c['objectives'][0].update(score_maximum={'numerator': '1', 'denominator': '1'})):
+                pass
+
+    def test_inclusive_interval_preserves_exact_records_and_unscored_lemmas(self):
+        def configure(c):
+            ScoreMinimum.zero(c); self.cap(c)
+        for value, expected in (({'numerator': '0', 'denominator': '1'}, [0]),
+                                ({'numerator': '31', 'denominator': '10'}, [3.1])):
+            with self.subTest(value=value), starter(
+                    change=lambda s: s['claims'][0].update(score=value), configure=configure) as (root, _, intake):
+                initial = pipeline.execute(intake)
+                first = judge(intake, initial, verdict(intake, initial))
+                dossier = pipeline.finalize(intake, initial, first, root/'score.json', root/'dossier.json')
+                self.assertEqual(read_json(root/'score.json')['scores'], expected)
+                self.assertEqual(dossier['data']['score_records'][0]['record'], value)
+        with starter(change=lambda s: s.update(claims=['A partial lemma.']), configure=configure) as (_, _, intake):
+            initial = pipeline.execute(intake)
+            first = judge(intake, initial, verdict(intake, initial, accepted=['A partial lemma.']))
+            self.assertIsNone(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'])
+
+    def test_checker_above_maximum_cannot_score_but_can_remain_unscored(self):
+        def configure(c):
+            checker_source(c)
+            c['objectives'][0]['score_maximum'] = {'numerator': '5', 'denominator': '1'}
+        with registered(config_change=configure) as (_, _, intake):
+            for value in (5, 6):
+                initial = initial_run(intake, result({'passed': True, 'value': value}))
+                if value == 6:
+                    self.assertEqual(score_gate(intake['data'], initial)['bindings'][0]['status'], 'above_maximum')
+                    with self.assertRaisesRegex(VerifierError, 'accepted_score_source_unavailable'):
+                        judge(intake, initial, verdict(intake, initial))
+                    first = judge(intake, initial, verdict(intake, initial, accepted=['An auxiliary lemma.']))
+                    self.assertIsNone(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'])
+                else:
+                    first = judge(intake, initial, verdict(intake, initial))
+                    self.assertEqual(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'], [5])
+
+    def test_invalid_maximum_and_exact_interval_order(self):
+        with starter() as (_, effective, _):
+            for value in (0, True, None, 'positive_infinity', {'numerator': '2', 'denominator': '4'}):
+                with self.subTest(value=value), self.assertRaises(VerifierError):
+                    config = copy.deepcopy(effective['config']); config['objectives'][0]['score_maximum'] = value
+                    normalize(config)
+            config = copy.deepcopy(effective['config']); self.cap(config)
+            del config['objectives'][0]['score_source']
+            with self.assertRaisesRegex(VerifierError, 'score_maximum_requires_source'):
+                normalize(config)
+            config = copy.deepcopy(effective['config'])
+            config['objectives'][0].update(
+                score_minimum={'numerator': '9007199254740993', 'denominator': '9007199254740992'},
+                score_maximum={'numerator': '1', 'denominator': '1'})
+            with self.assertRaisesRegex(VerifierError, 'objective_bounds_order'):
+                normalize(config)
+            config['objectives'][0]['score_maximum'] = config['objectives'][0]['score_minimum']
+            normalize(config)  # A singleton interval is allowed.
+
+    def test_shared_claim_must_satisfy_each_objective_and_terminal_direction(self):
+        def configure(c):
+            c['objectives'].append({**c['objectives'][0], 'name': 'second',
+                                   'score_maximum': {'numerator': '0', 'denominator': '1'}})
+        with self.assertRaisesRegex(VerifierError, 'score_above_maximum'):
+            with starter(configure=configure):
+                pass
+        with self.assertRaisesRegex(VerifierError, 'terminal_requires_maximization'):
+            with starter(change=lambda s: s['claims'][0].update(score='positive_infinity'),
+                         configure=lambda c: c['objectives'][0].update(direction='-')):
+                pass

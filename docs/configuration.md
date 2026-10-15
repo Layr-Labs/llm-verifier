@@ -16,7 +16,7 @@ Required fields:
 | `id` | Unique bounded ASCII challenge identifier |
 | `rules_path` | Bounded relative POSIX path to UTF-8 rules, outside submission |
 | `review_standard` | Exact label required in every judgment |
-| `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source` and exact `score_minimum` ([authoring](authoring.md#score-sources)) |
+| `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source`, inclusive `score_minimum` / `score_maximum` |
 | `allow_unscored` | Whether valid partial work can have `scores: null` |
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |
@@ -110,7 +110,8 @@ as infrastructure, never fall back to another model or fabricate a judgment.
 Every bounded regular UTF-8 file in the submission tree is snapshotted and shown
 to the judge. Files are inert data until a declared Python entrypoint is executed
 inside Docker. `submission.json` requires `version: 1`, `title`, `claims`
-(nonempty list of bounded strings), and `experiments` (possibly empty). It may
+(nonempty list of bounded strings or [structured scored claims](authoring.md#score-sources)),
+and `experiments` (possibly empty). It may
 also declare `checks: [{check, inputs}]`, one payload per registered checker ID;
 see [protected checks](checkers.md). All other fields are rejected.
 Each experiment has exactly:

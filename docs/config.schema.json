@@ -83,25 +83,12 @@
             ]
           },
           "score_minimum": {
-            "type": "object",
-            "description": "Inclusive exact lower bound for a score_source objective; reduced finite rational. Enforced independently of model acceptance.",
-            "properties": {
-              "numerator": {
-                "type": "string",
-                "pattern": "^(0|-?[1-9][0-9]*)$",
-                "maxLength": 256
-              },
-              "denominator": {
-                "type": "string",
-                "pattern": "^[1-9][0-9]*$",
-                "maxLength": 256
-              }
-            },
-            "required": [
-              "numerator",
-              "denominator"
-            ],
-            "additionalProperties": false
+            "$ref": "#/$defs/scoreBound",
+            "description": "Inclusive exact lower bound for a score_source objective; reduced finite rational. Enforced independently of model acceptance."
+          },
+          "score_maximum": {
+            "$ref": "#/$defs/scoreBound",
+            "description": "Inclusive exact upper bound for a score_source objective; reduced finite rational. Enforced independently of model acceptance."
           }
         },
         "required": [
@@ -451,5 +438,27 @@
     "supported_policies",
     "provider"
   ],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "scoreBound": {
+      "type": "object",
+      "properties": {
+        "numerator": {
+          "type": "string",
+          "pattern": "^(0|-?[1-9][0-9]*)$",
+          "maxLength": 256
+        },
+        "denominator": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$",
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "numerator",
+        "denominator"
+      ],
+      "additionalProperties": false
+    }
+  }
 }

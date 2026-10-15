@@ -12,7 +12,8 @@ flowchart LR
   Q --> Z
 ```
 
-`pipeline.execute` only executes immutable entrypoints. `pipeline.review` only
+`pipeline.execute` only executes immutable candidate entrypoints or protected
+registered checkers. Both use the same budgeted phase reports. `pipeline.review` only
 calls the configured reviewer. `pipeline.finalize` validates the entire chain
 and projects a judgment. Proof-only initial evidence is an empty successful
 report. Direct initial judgments must not carry follow-up artifacts; requested
@@ -32,7 +33,8 @@ obligations remain explicit; the generic harness does not pretend to prove them.
 The model's stage response is `{kind, judgment, requests}`. A judgment has
 `kind: "judgment"`, the judgment object and `requests: []`; a request batch has
 `kind: "followup"`, `judgment: null` and 1..budget request objects with exactly
-`experiment`, `inputs`, `reason`. An empty batch is represented by a direct
+`experiment`, `inputs`, `reason`, or `check`, `inputs`, `reason` for a registered
+organizer checker. The selectors cannot be mixed. An empty batch is represented by a direct
 judgment, never an ambiguous request without a next step.
 
 ## Snapshot and artifact binding
@@ -81,10 +83,12 @@ an entrypoint deliberately returns one. Failure never implies mathematical
 acceptance.
 
 Each execution makes a fresh directory from snapshot bytes. A fixed
-`/snapshot/entrypoint.py` is the exact submitted entrypoint; original files are
+`/snapshot/entrypoint.py` is the exact selected entrypoint; original files are
 read-only at `/snapshot/files/<path>`. Python runs with `-I -B`, workdir `/tmp`,
 standard library only, and no automatic sibling imports. Programs can explicitly
-read their submitted data under `/snapshot/files`. The runner exposes only its fixed
+read their submitted data under `/snapshot/files`. Organizer checks instead
+receive only their explicit protected bundle at the same fixed layout, never
+candidate files. The runner exposes only its fixed
 Python entrypoint, with no configured shell/install command or dependency-install
 stage. Submitted Python can invoke tools already present in the pinned image;
 those processes remain subject to the same sandbox limits. No writable workspace,
@@ -100,9 +104,10 @@ absence or fails infrastructure. There is no unsandboxed fallback.
 
 ## Provider boundaries
 
-Only the review job has `OPENROUTER_API_KEY`. Rules are in the system message;
-full submission files and captured evidence are user-message data. No source or
-evidence is hidden to fit context: the exact serialized full prompt must fit the
+Only the review job has `OPENROUTER_API_KEY`. Rules, checker descriptors/schemas
+and the derived score gate are in the system message;
+full submission files and captured evidence are user-message data. Protected checker source bytes are retained in intake/dossier, not sent to the
+model. No candidate source or captured evidence is hidden to fit context: the exact serialized full prompt must fit the
 organizer cap or the review fails before a call. LLM prompt-injection resistance
 is not a proof guarantee; the deterministic execution and output boundaries do
 not depend on model obedience.
@@ -123,7 +128,9 @@ with no model/provider fallback.
 For both fields: valid scored → `{valid:true,scores:[...],reason:...}`; valid
 unscored → `{valid:true,scores:null,reason:...}`; invalid →
 `{valid:false,scores:null|[...],reason:...}`. Invalid measured tuples are retained
-when both fields are requested. Validity-only emits `valid` and `reason`.
+when both fields are requested, but only if all configured required checks pass
+for the submission-declared canonical inputs. This gate applies even when scores
+are hidden by field projection. See [checker bindings and gate](checkers.md). Validity-only emits `valid` and `reason`.
 Scores-only emits just `scores` and still requires a legitimate valid claim;
 otherwise it fails, preserving previous platform evidence. Null is explicit.
 Dossier/provenance is uploaded separately and does not add fields to the Yukon

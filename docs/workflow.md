@@ -76,7 +76,7 @@ uploads it once. The manifest sets `runner.scoreArtifactName` to `benchmark-scor
 The dossier is a separate artifact; phase files do not have the score filename.
 
 The example `setupCommand` and `benchmarkCommand` are phase descriptors for
-intake and finalization. **Local `yukon run` is unsupported in v0.1.** Yukon calls
+intake and finalization. **Local `yukon run` is unsupported in v0.2.** Yukon calls
 setup immediately before benchmark without pausing for the intermediate phases;
 setup generates a new intake UUID and invalidates any previously prepared review
 chain. Running the separate phases beforehand does not fix that behavior. Use
@@ -98,3 +98,15 @@ result shapes. An actual GitHub-hosted workflow and live model acceptance remain
 unvalidated and require separately authorized validation. Internal repository
 publication alone does not establish either, or authorize a workflow dispatch,
 paid model call or challenge import.
+
+## Protected registry (0.2)
+
+The same six jobs carry candidate experiments and organizer checkers. Keep every
+checker source/target bundle path outside editable submission paths. Runtime
+preparation follows the actual initial plan, including checker-only plans. Empty
+initial plans need no Docker. The conditional follow-up job passes `--phase
+followup`, preparing judge-selectable entrypoints on its fresh worker. The workflow
+rejects a scorePath that would overwrite any declared protected checker file.
+[Checker source snapshots, shared budgets and the numeric score gate](checkers.md)
+are validated through the existing intake/phase artifact channel. No checker
+source executes in a credentialed review job.

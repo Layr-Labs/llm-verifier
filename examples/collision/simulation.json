@@ -1,0 +1,55 @@
+{
+  "initial_results": [
+    {
+      "passed": true,
+      "target_bits": 8,
+      "digest_hex": "bd",
+      "total_bytes": 5
+    }
+  ],
+  "initial_decision": {
+    "kind": "followup",
+    "judgment": null,
+    "requests": [
+      {
+        "check": "collision",
+        "inputs": {
+          "left": "m3",
+          "right": "m3"
+        },
+        "reason": "Confirm that identical messages are rejected; keep the original declared pair for scoring."
+      }
+    ]
+  },
+  "followup_results": [
+    {
+      "passed": false,
+      "target_bits": 8,
+      "digest_hex": "bd",
+      "total_bytes": 4
+    }
+  ],
+  "final_decision": {
+    "kind": "judgment",
+    "requests": [],
+    "judgment": {
+      "valid": true,
+      "scores": [
+        5
+      ],
+      "reason": "The canonical pair passed; the diagnostic identical-message pair failed. Score is the canonical pair total_bytes only.",
+      "accepted_claims": [
+        "The canonical declared pair is a collision for the toy target."
+      ],
+      "assumptions": [],
+      "unresolved_obligations": [
+        "No full SHA-256 collision, complexity, probability or global optimality established."
+      ],
+      "evidence_refs": [
+        "run:initial:0",
+        "run:followup:0"
+      ],
+      "review_standard": "scoped-mathematical-review-v1"
+    }
+  }
+}

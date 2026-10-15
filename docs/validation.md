@@ -1,4 +1,4 @@
-# Initial implementation validation
+# Implementation validation
 
 Validation is offline and scoped to implementation contracts. This is not a live
 mathematical benchmark result or hosted workflow acceptance.
@@ -47,3 +47,46 @@ review; no push or publication had occurred. Subsequent internal source
 publication to `Layr-Labs/llm-verifier` does not extend that validation to hosted
 execution. No live OpenRouter calls, hosted GitHub Actions run, paid benchmark,
 challenge import or deployment has been performed.
+
+## Protected checker registry / 0.2.0 (2026-10-15)
+
+Implemented and verified in a new isolated worktree starting at published commit
+`d204edd7f7a2a88c18c519421700ff8ff6a784b9`. At this validation, source was left
+uncommitted for review; any subsequent draft PR publication does not extend this
+validation to hosted execution.
+The original 55 tests are retained. A fresh 0.2.0 wheel was built using the
+existing pinned build requirements, installed in a new virtual environment, and
+all following Python suites used that installed package with `PYTHONPATH` unset:
+
+- Default discovery: **87 tests, 82 passed, 5 Docker-gated skips**.
+- Explicit real Docker suite: **5 tests, 5 passed, 0 skipped**, using the installed
+  pinned image with no pull. All 87 unique repository tests passed across the two
+  runs. This includes the original two Docker tests and three new checker tests.
+- New tests cover literal boolean/schema gating; missing declarations and
+  unscored validity policy; exact-input retries versus different/undeclared
+  cherry-picked passes; typed numeric bindings; invalid and hidden-score
+  judgments; stale final score removal; candidate ID/source collisions; bundle,
+  requester, source, input, output and replay tampering; explicit aggregate file
+  and run budgets; no-follow paths; prompt/evidence separation; native strict
+  schema variants and optional input behavior; complete mocked CLI phases;
+  phase-aware runtime preparation; and both collision simulation branches.
+- Real Docker checks confirm the toy pair and diagnostic outputs, selected-bundle
+  isolation, no candidate import/host credentials/socket/network, read-only
+  source, nonroot UID, fresh tmpfs between runs, timeout and schema-invalid
+  output retained as unscored evidence. Model responses remain mocked.
+- `actionlint` 1.7.12 accepts the updated workflow; local documentation links,
+  `pip check`, and exact installed/source runtime byte comparison pass.
+- Existing proof/computation and new scored/unscored collision simulations pass
+  through the installed module CLI. Simulation cannot publish an official score.
+
+The independent review's no-work runtime finding was corrected: default initial
+preparation uses the actual initial plan, while the conditional follow-up job
+explicitly selects `--phase followup` on its fresh worker. Thus an unscored lemma
+with no runs needs no Docker despite a registered required checker.
+
+During this validation, no live model call, hosted workflow dispatch, challenge
+import, paid benchmark, publication or change to original owner worktrees was
+performed.
+The gate verifies a scoped predicate, not arbitrary objective values or broader
+mathematical claims. Local `yukon run` and every non-null admission policy remain
+unsupported. See [protected checks](checkers.md) for the exact limits.

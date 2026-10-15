@@ -4,7 +4,8 @@ from pathlib import Path
 import re
 
 from .errors import VerifierError
-from .files import outside, read_bytes, relative, utf8
+from .files import outside, read_bytes, relative, snapshot_declared, utf8, validate_files
+from .input_schema import validate_schema
 from .jsonutil import canonical, integer, keys, loads, number, text
 
 DEFAULT_IMAGE = "python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301"
@@ -36,7 +37,7 @@ def identifier(value):
 
 
 def normalize(raw):
-    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime"})
+    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers"})
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise VerifierError("unsupported_config_version")
     identifier(raw["id"])
@@ -79,6 +80,39 @@ def normalize(raw):
     limits = {name: supplied.get(name, spec[0]) for name, spec in LIMITS.items()}
     for name, (_, low, high) in LIMITS.items():
         integer(limits[name], low, high)
+    checkers = raw.get("checkers", [])
+    if type(checkers) is not list or len(checkers) > 16:
+        raise VerifierError("checker_count")
+    checker_ids, paths = set(), set()
+    for checker in checkers:
+        keys(checker, {"id", "description", "source", "files", "input_schema", "output_schema", "required_for_score"})
+        identifier(checker["id"])
+        if checker["id"] in checker_ids:
+            raise VerifierError("duplicate_checker_id")
+        checker_ids.add(checker["id"])
+        text(checker["description"], 4000)
+        source = relative(checker["source"])
+        bundle = checker["files"]
+        if type(bundle) is not list or not 1 <= len(bundle) <= limits["max_files"]:
+            raise VerifierError("checker_file_count")
+        for path in bundle:
+            relative(path)
+        if len(set(bundle)) != len(bundle) or source not in bundle or not source.endswith(".py"):
+            raise VerifierError("checker_python_entrypoint")
+        paths.update(bundle)
+        for field in ("input_schema", "output_schema"):
+            validate_schema(checker[field])
+            if checker[field]["type"] != "object":
+                raise VerifierError("checker_schema_root_object_required")
+        if type(checker["required_for_score"]) is not bool:
+            raise VerifierError("required_for_score_boolean")
+        output = checker["output_schema"]
+        if checker["required_for_score"] and (
+            "passed" not in output["required"] or output["properties"].get("passed") != {"type": "boolean"}
+        ):
+            raise VerifierError("required_checker_boolean_passed")
+    if len(paths) > limits["max_files"]:
+        raise VerifierError("checker_registry_file_limit")
     runtime = raw.get("runtime", {"image": DEFAULT_IMAGE, "platform": "linux/amd64"})
     keys(runtime, {"image", "platform"})
     if type(runtime["image"]) is not str or not IMAGE.fullmatch(runtime["image"]) or runtime["platform"] != "linux/amd64":
@@ -130,14 +164,21 @@ def load_config(root, config_path, submission_path, evaluation=None):
     rules = utf8(read_bytes(root / config["rules_path"], 131072))
     text(rules, 131072)
     evaluation, instructions = select_evaluation(config, evaluation)
-    return {"config": config, "rules": rules, "evaluation": evaluation, "policy_instructions": instructions}
+    paths = {path for checker in config.get("checkers", []) for path in checker["files"]}
+    checker_files = snapshot_declared(root, paths, root / submission_path, config["limits"])
+    return {"config": config, "rules": rules, "evaluation": evaluation, "policy_instructions": instructions,
+            "checker_files": checker_files}
 
 
 def verify_effective(effective):
-    keys(effective, {"config", "rules", "evaluation", "policy_instructions"})
+    keys(effective, {"config", "rules", "evaluation", "policy_instructions", "checker_files"})
     if canonical(normalize(effective["config"])) != canonical(effective["config"]):
         raise VerifierError("noncanonical_config")
     text(effective["rules"], 131072)
     _, instructions = select_evaluation(effective["config"], effective["evaluation"])
     if canonical(instructions) != canonical(effective["policy_instructions"]):
         raise VerifierError("policy_binding")
+    paths = {path for checker in effective["config"].get("checkers", []) for path in checker["files"]}
+    validate_files(effective["checker_files"], effective["config"]["limits"], empty=True)
+    if set(effective["checker_files"]) != paths:
+        raise VerifierError("checker_bundle_binding")

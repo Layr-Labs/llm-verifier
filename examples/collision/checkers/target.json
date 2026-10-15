@@ -1,0 +1,5 @@
+{
+  "label": "TOY ONLY: eight-bit truncation, not full SHA-256",
+  "prefix": "llmv-toy-v1:",
+  "bits": 8
+}

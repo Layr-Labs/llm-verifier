@@ -214,7 +214,7 @@ jobs:
           "$RUNNER_TEMP/llmv-env/bin/python" -m pip install --no-index --no-deps "$RUNNER_TEMP"/wheel/*.whl
       - name: Setup pinned isolated runtime
         run: |
-          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" prepare-runtime --intake "$RUNNER_TEMP/intake/intake.json"
+          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" prepare-runtime --phase followup --intake "$RUNNER_TEMP/intake/intake.json"
       - name: Benchmark immutable requested entrypoints
         run: |
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" followup --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" --out "$RUNNER_TEMP/followup/followup.json"

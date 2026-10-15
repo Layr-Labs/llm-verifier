@@ -54,7 +54,7 @@ def validate_decision(value, config, manifest, refs, previous_runs, *, final=Fal
     elif value["kind"] == "followup" and not final:
         if value["judgment"] is not None:
             raise VerifierError("ambiguous_decision")
-        followup_plan(value["requests"], manifest, config["limits"], previous_runs)
+        followup_plan(value["requests"], manifest, config["limits"], previous_runs, config.get("checkers", []))
     else:
         raise VerifierError("final_judgment_required" if final else "decision_kind")
     return value
@@ -69,6 +69,8 @@ def response_schema(config, manifest=None, *, final=False):
                     "reason": {"type": "string", "maxLength": 4000}, "review_standard": {"type": "string"},
                     **{field: strings for field in ("accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs")}}}
     entries = (manifest or {"experiments": []})["experiments"] if not final and config["limits"]["max_followups"] else []
+    checkers = config.get("checkers", []) if not final and config["limits"]["max_followups"] else []
+    variants = [("experiment", e) for e in entries] + [("check", c) for c in checkers]
     def strict_objects(schema):
         if schema["type"] == "object":
             if set(schema["required"]) != set(schema["properties"]):
@@ -78,12 +80,12 @@ def response_schema(config, manifest=None, *, final=False):
         elif schema["type"] == "array":
             strict_objects(schema["items"])
     if not final and config["provider"]["response_format"] == "json_schema":
-        for entry in entries:
+        for _, entry in variants:
             strict_objects(entry["input_schema"])
     requests = [{"type": "object", "additionalProperties": False,
-                 "required": ["experiment", "inputs", "reason"], "properties": {
-                     "experiment": {"type": "string", "enum": [e["id"]]},
-                     "inputs": e["input_schema"], "reason": {"type": "string"}}} for e in entries]
+                 "required": [selector, "inputs", "reason"], "properties": {
+                     selector: {"type": "string", "enum": [entry["id"]]},
+                     "inputs": entry["input_schema"], "reason": {"type": "string"}}} for selector, entry in variants]
     can_request = not final and bool(requests) and config["limits"]["max_followups"] > 0
     request_items = {"anyOf": requests} if requests else {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
     return {"type": "object", "additionalProperties": False, "required": ["kind", "judgment", "requests"],

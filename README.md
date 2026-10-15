@@ -55,6 +55,7 @@ llm-verifier check --root my-challenge
 Edit the generated rules, configuration and example submission directly. The
 [authoring guide](docs/authoring.md) covers proof files, deterministic scores,
 checker tests and the optional pinned Yukon/Actions caller.
+For agents, start with the shared [challenge-authoring skill](skills/llm-verifier-challenge/SKILL.md).
 
 ## Independent phases
 

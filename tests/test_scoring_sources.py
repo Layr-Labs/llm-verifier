@@ -11,8 +11,9 @@ from llm_verifier.checks import score_gate
 from llm_verifier.config import load_config, normalize
 from llm_verifier.errors import VerifierError
 from llm_verifier.files import read_json, write_json
+from llm_verifier.judgment import validate_judgment
 from llm_verifier.scoring import score_value
-from tests.support import reseal, scripted_model
+from tests.support import example, reseal, scripted_model
 from tests.test_checks import registered, initial_run, result, retry
 
 
@@ -150,3 +151,83 @@ class ScoringSources(unittest.TestCase):
                            lambda c:c['objectives'][0].update(score_source={'claim':True})):
                 c=copy.deepcopy(effective['config']);change(c)
                 with self.assertRaises(VerifierError):normalize(c)
+
+
+    def test_claim_bounds_fail_at_static_check_and_production_intake(self):
+        cases = [({'minimum': 0}, {'numerator': '-1', 'denominator': '1'}),
+                 ({'maximum': 0}, {'numerator': '1', 'denominator': '1'}),
+                 ({'maximum': 1}, 'positive_infinity'),
+                 # These rationals round to the bound in binary64, but lie outside it.
+                 ({'minimum': 1}, {'numerator': '99999999999999999999', 'denominator': '100000000000000000000'}),
+                 ({'maximum': 1}, {'numerator': '100000000000000000001', 'denominator': '100000000000000000000'})]
+        for bounds, value in cases:
+            with self.subTest(bounds=bounds, value=value), starter() as (root, _, _):
+                config = read_json(root/'verifier.json'); config['objectives'][0].update(bounds)
+                write_json(root/'verifier.json', config)
+                submission = read_json(root/'submission/submission.json'); submission['claims'][0]['score'] = value
+                write_json(root/'submission/submission.json', submission)
+                with self.assertRaisesRegex(VerifierError, 'score_out_of_bounds'):
+                    scaffold.check(root)
+                effective = load_config(root, 'verifier.json', 'submission')
+                with self.assertRaisesRegex(VerifierError, 'score_out_of_bounds'):
+                    intake_snapshot(effective, root/'submission')
+
+    def test_inclusive_bounds_signed_scores_and_infinity_projection(self):
+        cases = [({'minimum': 0, 'maximum': 0}, {'numerator': '0', 'denominator': '1'}, [0]),
+                 ({'minimum': 0, 'maximum': 3.1}, {'numerator': '31', 'denominator': '10'}, [3.1]),
+                 ({}, {'numerator': '-3', 'denominator': '2'}, [-1.5]),
+                 ({'minimum': -2, 'maximum': -1.5}, {'numerator': '-3', 'denominator': '2'}, [-1.5]),
+                 ({'minimum': 0}, 'positive_infinity', None)]
+        for bounds, value, expected in cases:
+            with self.subTest(bounds=bounds, value=value), starter(
+                    change=lambda s: s['claims'][0].update(score=value),
+                    configure=lambda c: c['objectives'][0].update(bounds)) as (root, _, intake):
+                initial = pipeline.execute(intake)
+                first = judge(intake, initial, verdict(intake, initial))
+                report = pipeline.finalize(intake, initial, first, root/'score.json', root/'dossier.json')
+                self.assertEqual(read_json(root/'score.json')['scores'], expected)
+                self.assertEqual(report['data']['score_records'][0]['record'], value)
+                partial = judge(intake, initial, verdict(intake, initial, accepted=['An auxiliary lemma.']))
+                self.assertIsNone(pipeline.dossier(intake, initial, partial)['data']['judgment']['scores'])
+
+    def test_each_objective_checks_its_bound_even_with_a_shared_claim(self):
+        def configure(c):
+            second = {**c['objectives'][0], 'name': 'second', 'maximum': 0}
+            c['objectives'].append(second)
+        with self.assertRaisesRegex(VerifierError, 'score_out_of_bounds'):
+            with starter(configure=configure):
+                pass
+
+    def test_score_bounds_reject_bad_configuration(self):
+        with starter() as (_, effective, _):
+            for bounds in ({'minimum': True}, {'minimum': None}, {'maximum': '1'},
+                           {'minimum': float('-inf')}, {'maximum': float('nan')},
+                           {'maximum': 10**309}, {'minimum': 2, 'maximum': 1}):
+                with self.subTest(bounds=bounds), self.assertRaises(VerifierError):
+                    c = copy.deepcopy(effective['config']); c['objectives'][0].update(bounds)
+                    normalize(c)
+
+    def test_checker_and_legacy_model_scores_obey_objective_bounds(self):
+        def configure(c):
+            checker_source(c)
+            c['objectives'][0].update(minimum=5, maximum=10)
+        with registered(config_change=configure) as (_, _, intake):
+            for value in (4, 5, 10, 11):
+                with self.subTest(checker_value=value):
+                    initial = initial_run(intake, result({'passed': True, 'value': value}))
+                    if value in (4, 11):
+                        with self.assertRaisesRegex(VerifierError, 'score_out_of_bounds'):
+                            pipeline.review_material(intake, initial)
+                    else:
+                        first = judge(intake, initial, verdict(intake, initial))
+                        self.assertEqual(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'], [value])
+        with example(mutate=lambda c: c['objectives'][0].update(minimum=-0.1, maximum=0.1)) as (root, effective, _):
+            judgment = read_json(root/'simulation.json')['initial_decision']['judgment']
+            for value in (-0.2, -0.1, 0.1, 0.2):
+                with self.subTest(model_value=value):
+                    candidate = {**judgment, 'scores': [value]}
+                    if abs(value) > 0.1:
+                        with self.assertRaisesRegex(VerifierError, 'score_out_of_bounds'):
+                            validate_judgment(candidate, effective['config'], ['source:proof.md'])
+                    else:
+                        validate_judgment(candidate, effective['config'], ['source:proof.md'])

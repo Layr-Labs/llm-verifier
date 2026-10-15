@@ -48,6 +48,14 @@
             "minLength": 1,
             "maxLength": 4000
           },
+          "minimum": {
+            "type": "number",
+            "description": "Optional inclusive lower score bound; must be finite and no greater than maximum."
+          },
+          "maximum": {
+            "type": "number",
+            "description": "Optional inclusive upper score bound; must be finite and no less than minimum."
+          },
           "score_source": {
             "oneOf": [
               {

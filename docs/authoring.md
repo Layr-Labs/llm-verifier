@@ -41,6 +41,13 @@ That claim has a statement, exact score, and paths relative to `submission/`:
 Ordinary unscored claims remain strings. Integers in a rational are canonical
 strings of at most 256 characters; the fraction must be reduced with a positive
 denominator. Challenge rules decide which coefficients and theorems are eligible.
+If the rules restrict the score range, declare optional inclusive `minimum` and
+`maximum` numbers on the objective, e.g. `"minimum": 0` for a nonnegative
+coefficient. The shared verifier enforces these bounds for claim, checker and
+model scores; no custom range checker is needed. Claim bounds are checked before
+binary64 projection, against the decimal representation of each configured bound.
+Omitting bounds preserves signed scores. A finite maximum excludes
+`positive_infinity`; unscored lemmas remain allowed by `allow_unscored`.
 Proofs use the existing submission/file limits, not the 16 KiB checker-input limit.
 Do not copy proof text into the manifest or split it into tool-input chunks.
 
@@ -90,8 +97,10 @@ Run `llm-verifier check --root .`, explicitly prepare the digest-pinned image fr
 `verifier.json`, then run `llm-verifier test-checkers --root .` without model
 credentials. Tests use the production Docker runner, limits, snapshot isolation
 and cleanup. No image is pulled implicitly. The repository's collision example
-contains working cases. Keep framework protocol tests upstream; challenge tests
-should cover its scientific or computational behavior.
+contains working cases. Run these self-tests when authoring or changing a checker;
+the dispatched evaluation runs the submission's checks, not this known-answer
+corpus. Keep framework protocol tests upstream; challenge tests should cover
+its scientific or computational behavior.
 
 ## Yukon and GitHub Actions
 
@@ -101,7 +110,9 @@ Once the verifier revision is published and accessible to the caller:
 llm-verifier github --root my-challenge --verifier-revision FULL_40_CHARACTER_COMMIT
 ```
 
-This writes `benchmark.json` and `.github/workflows/benchmark.yml`. Rerun it after
+This writes `benchmark.json` and a dispatch-only `.github/workflows/benchmark.yml`.
+Keep `workflow_dispatch`: Yukon dispatches evaluations explicitly; adding a
+`pull_request` benchmark trigger can evaluate the same submission twice. Rerun it after
 changing objectives or policies; `check` detects a stale generated manifest.
 Both workflow and source use the same supplied pin. Generated JSON is formatted
 for review. Configure reusable-workflow access and the checkout/model credentials

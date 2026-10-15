@@ -4,11 +4,11 @@ from .config import identifier
 from .errors import VerifierError
 from .files import relative, validate_files
 from .input_schema import validate_schema, validate_value
-from .scoring import validate_claim
+from .scoring import score_value, validate_claim
 from .jsonutil import canonical, keys, loads, text
 
 
-def manifest_from(files, limits, checkers=()):
+def manifest_from(files, limits, checkers=(), objectives=()):
     validate_files(files, limits)
     if "submission.json" not in files:
         raise VerifierError("missing_submission_manifest")
@@ -20,8 +20,12 @@ def manifest_from(files, limits, checkers=()):
     claims = manifest["claims"]
     if type(claims) is not list or not 1 <= len(claims) <= 32:
         raise VerifierError("claim_count")
-    for claim in claims:
+    for index, claim in enumerate(claims):
         validate_claim(claim, files)
+        if type(claim) is dict:
+            for objective in objectives:
+                if objective.get("score_source") == {"claim": index}:
+                    score_value(claim["score"], objective)
     entries = manifest["experiments"]
     if type(entries) is not list or len(entries) > 16:
         raise VerifierError("experiment_count")

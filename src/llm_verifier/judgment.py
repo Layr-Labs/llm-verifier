@@ -4,6 +4,7 @@ import sys
 
 from .errors import VerifierError
 from .jsonutil import keys, number, text
+from .scoring import check_score_bounds
 from .submission import followup_plan
 
 JUDGMENT_FIELDS = {"valid", "scores", "reason", "accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs", "review_standard"}
@@ -40,8 +41,9 @@ def validate_judgment(judgment, config, evidence_refs):
     else:
         if type(scores) is not list or not scores or len(scores) != len(config["objectives"]):
             raise VerifierError("score_objective_count")
-        for score in scores:
+        for score, objective in zip(scores, config["objectives"]):
             number(score, -sys.float_info.max, sys.float_info.max)
+            check_score_bounds(score, objective)
     return judgment
 
 

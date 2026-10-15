@@ -95,12 +95,6 @@ def check(root):
     config = effective["config"]
     # Strict validation at trust boundaries; unrelated authoring files are not
     # part of the evaluation and do not need a second repository inventory.
-    for objective in config["objectives"]:
-        source = objective.get("score_source", {})
-        if "claim" in source and source["claim"] < len(intake["data"]["manifest"]["claims"]):
-            claim = intake["data"]["manifest"]["claims"][source["claim"]]
-            if type(claim) is dict and claim["score"] == "positive_infinity" and objective["direction"] != "+":
-                raise VerifierError("terminal_requires_maximization")
     cases = checker_cases(root, effective)
     benchmark = Path(root) / "benchmark.json"
     if os.path.lexists(benchmark):

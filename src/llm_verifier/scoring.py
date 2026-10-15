@@ -18,8 +18,21 @@ cannot score the main claim. An accepted positive_infinity record is retained in
 the dossier with null numeric scores because Yukon cannot order infinity.
 """
 
-def score_value(value):
+def check_score_bounds(value, objective):
+    # Compare exact claims before binary64 projection; JSON numeric bounds use
+    # their decimal representation. None denotes the positive-infinity endpoint.
+    exact = math.inf if value is None else Fraction(str(value))
+    if ("minimum" in objective and exact < Fraction(str(objective["minimum"]))
+            or "maximum" in objective and exact > Fraction(str(objective["maximum"]))):
+        raise VerifierError("score_out_of_bounds")
+
+
+def score_value(value, objective=None):
+    objective = {} if objective is None else objective
     if value == "positive_infinity":
+        if objective.get("direction", "+") != "+":
+            raise VerifierError("terminal_requires_maximization")
+        check_score_bounds(None, objective)
         return None
     keys(value, {"numerator", "denominator"})
     n, d = value["numerator"], value["denominator"]
@@ -30,6 +43,7 @@ def score_value(value):
     exact = Fraction(int(n), int(d))
     if (str(exact.numerator), str(exact.denominator)) != (n, d):
         raise VerifierError("reduced_rational_required")
+    check_score_bounds(exact, objective)
     projected = float(exact)
     if not math.isfinite(projected) or (projected == 0 and exact != 0):
         raise VerifierError("unrepresentable_score")
@@ -95,9 +109,7 @@ def bindings(data, runs, required):
             claim = claims[source["claim"]] if source["claim"] < len(claims) else None
             if type(claim) is dict:
                 record = claim["score"]
-                value = score_value(record)
-                if value is None and objective["direction"] != "+":
-                    raise VerifierError("terminal_requires_maximization")
+                value = score_value(record, objective)
                 status = "ready"
         else:
             gate = by_check[source["check"]]
@@ -107,6 +119,7 @@ def bindings(data, runs, required):
                     status = "conflicting_results"
                 else:
                     record = value = values[0]
+                    check_score_bounds(value, objective)
                     status = "ready"
         result.append({"objective": objective["name"], "source": source, "claim_id": claim_id,
                        "status": status, "record": record, "value": value})

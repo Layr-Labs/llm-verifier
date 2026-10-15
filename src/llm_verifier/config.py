@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import re
+import sys
 
 from .errors import VerifierError
 from .files import outside, read_bytes, relative, snapshot_declared, utf8, validate_files
@@ -51,13 +52,18 @@ def normalize(raw):
         raise VerifierError("objective_count")
     names = set()
     for item in objectives:
-        keys(item, {"name", "direction", "unit", "semantics"}, {"score_source"})
+        keys(item, {"name", "direction", "unit", "semantics"}, {"score_source", "minimum", "maximum"})
         identifier(item["name"])
         if item["name"] in names or item["direction"] not in ("+", "-"):
             raise VerifierError("objective_identity")
         names.add(item["name"])
         text(item["unit"], 100)
         text(item["semantics"], 4000)
+        for bound in ("minimum", "maximum"):
+            if bound in item:
+                number(item[bound], -sys.float_info.max, sys.float_info.max)
+        if "minimum" in item and "maximum" in item and item["minimum"] > item["maximum"]:
+            raise VerifierError("objective_bounds_order")
     if not objectives and not raw["allow_unscored"]:
         raise VerifierError("zero_objectives_require_unscored")
     keys(raw["policies"], {"scoring", "validity"})

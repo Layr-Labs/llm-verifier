@@ -46,7 +46,8 @@ def verify_envelope(value, stage, intake=None, parents=None):
 def intake_snapshot(effective, candidate_root, context=None, simulation=False):
     verify_effective(effective)
     files = snapshot(candidate_root, effective["config"]["limits"])
-    manifest = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
+    manifest = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []),
+                             effective["config"]["objectives"])
     code = implementation()
     context = context or {"kind": "local", "revision": "unasserted; use content hash"}
     bindings = {"evaluation_id": uuid.uuid4().hex, "config": digest(effective),
@@ -61,7 +62,8 @@ def verify_intake(intake, expected=None):
         raise VerifierError("unexpected_intake")
     keys(data, {"effective", "files", "manifest", "implementation", "context"})
     verify_effective(data["effective"])
-    manifest = manifest_from(data["files"], data["effective"]["config"]["limits"], data["effective"]["config"].get("checkers", []))
+    manifest = manifest_from(data["files"], data["effective"]["config"]["limits"], data["effective"]["config"].get("checkers", []),
+                             data["effective"]["config"]["objectives"])
     if canonical(manifest) != canonical(data["manifest"]):
         raise VerifierError("manifest_binding")
     bindings = intake["bindings"]

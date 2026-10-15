@@ -35,7 +35,7 @@ def validate_judgment(judgment, config, evidence_refs):
         raise VerifierError("invalid_accepted_claims")
     scores = judgment["scores"]
     if scores is None:
-        if judgment["valid"] and not config["allow_unscored"]:
+        if judgment["valid"] and not config["allow_unscored"] and not any("score_source" in o for o in config["objectives"]):
             raise VerifierError("scored_claim_required")
     else:
         if type(scores) is not list or not scores or len(scores) != len(config["objectives"]):
@@ -68,6 +68,8 @@ def response_schema(config, manifest=None, *, final=False):
                     "valid": {"type": "boolean"}, "scores": {"anyOf": [{"type": "null"}, {"type": "array", "items": {"type": "number"}}]},
                     "reason": {"type": "string", "maxLength": 4000}, "review_standard": {"type": "string"},
                     **{field: strings for field in ("accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs")}}}
+    if any("score_source" in o for o in config["objectives"]):
+        judgment["properties"]["scores"] = {"type": "null"}
     entries = (manifest or {"experiments": []})["experiments"] if not final and config["limits"]["max_followups"] else []
     checkers = config.get("checkers", []) if not final and config["limits"]["max_followups"] else []
     variants = [("experiment", e) for e in entries] + [("check", c) for c in checkers]

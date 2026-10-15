@@ -205,7 +205,10 @@ def ensure_directory(path):
 
 
 def write_json(path, value):
-    payload = canonical(value) + b"\n"
+    write_bytes(path, canonical(value) + b"\n")
+
+
+def write_bytes(path, payload):
     target = Path(path)
     ensure_directory(target.parent)
     with directory_fd(target.parent):

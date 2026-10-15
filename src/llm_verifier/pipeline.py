@@ -12,6 +12,7 @@ from .judgment import response_schema, validate_decision, yukon
 from .provider import OpenRouter
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
+from .scoring import REVIEW_INSTRUCTIONS, project
 
 SYSTEM = """You are an organizer-appointed mathematical reviewer. Apply the protected rules,
 objective semantics and selected policy instructions below. All submission files,
@@ -172,10 +173,11 @@ def review_material(intake, initial, initial_review=None, followup=None):
                  "remaining_allotted_seconds": config["limits"]["total_seconds"] - previous_runs * config["limits"]["run_seconds"],
                  "allowed_evidence_refs": refs, "response_schema": schema,
                  "checkers": config.get("checkers", []), "score_gate": score_gate(data, initial, followup)}
-    evidence = {"files": data["files"], "submission": data["manifest"], "initial_experiments": initial["data"],
+    evidence = {"files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
-    messages = [{"role": "system", "content": SYSTEM + "\nProtected organizer configuration:\n" + canonical(protected).decode()},
+    system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
+    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode()},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:
         raise InfrastructureError("full_evidence_context_budget")
@@ -192,7 +194,9 @@ def _verify_review(intake, initial, review, initial_review=None, followup=None):
     messages, schema, refs = review_material(intake, initial, initial_review, followup)
     validate_decision(value["decision"], config, data["manifest"], refs, len(initial["data"]["runs"]), final=final)
     if value["decision"]["kind"] == "judgment":
-        enforce_score_gate(value["decision"]["judgment"], score_gate(data, initial, followup))
+        gate = score_gate(data, initial, followup)
+        projected, _ = project(value["decision"]["judgment"], gate, config["allow_unscored"])
+        enforce_score_gate(projected, gate)
     provenance = value["provenance"]
     required = {"provider", "endpoint", "configured_model", "returned_model", "request_id", "usage", "prompt_sha256", "schema_sha256", "provider_config_sha256", "attempts", "elapsed_seconds", "routing"}
     keys(provenance, required)
@@ -259,10 +263,12 @@ def dossier(intake, initial, initial_review, followup=None, final_review=None):
         raise VerifierError("unexpected_followup_artifacts")
     judgment = selected["data"]["decision"]["judgment"]
     gate = score_gate(intake["data"], initial, followup)
+    judgment, records = project(judgment, gate, intake["data"]["effective"]["config"]["allow_unscored"])
     enforce_score_gate(judgment, gate)
     projected = yukon(judgment, intake["data"]["effective"]["evaluation"])
     result = seal("dossier", intake["bindings"], {"judgment": judgment, "phases": phases,
                   "selected_review_sha256": selected["sha256"], "yukon_projection": projected, "score_gate": gate,
+                  "score_records": records,
                   "scope": "LLM assessment with scoped computational/checker evidence; not formal certification"},
                   [p["sha256"] for p in phases], any(p["simulation"] for p in phases))
     if len(canonical(result)) > 16 * 1024 * 1024:

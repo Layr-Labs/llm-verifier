@@ -7,6 +7,7 @@ from .errors import VerifierError
 from .files import outside, read_bytes, relative, snapshot_declared, utf8, validate_files
 from .input_schema import validate_schema
 from .jsonutil import canonical, integer, keys, loads, number, text
+from .scoring import validate_sources
 
 DEFAULT_IMAGE = "python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301"
 IMAGE = re.compile(r"(?:docker\.io/library/)?python:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}\Z")
@@ -50,7 +51,7 @@ def normalize(raw):
         raise VerifierError("objective_count")
     names = set()
     for item in objectives:
-        keys(item, {"name", "direction", "unit", "semantics"})
+        keys(item, {"name", "direction", "unit", "semantics"}, {"score_source"})
         identifier(item["name"])
         if item["name"] in names or item["direction"] not in ("+", "-"):
             raise VerifierError("objective_identity")
@@ -113,6 +114,7 @@ def normalize(raw):
             raise VerifierError("required_checker_boolean_passed")
     if len(paths) > limits["max_files"]:
         raise VerifierError("checker_registry_file_limit")
+    validate_sources(objectives, checkers)
     runtime = raw.get("runtime", {"image": DEFAULT_IMAGE, "platform": "linux/amd64"})
     keys(runtime, {"image", "platform"})
     if type(runtime["image"]) is not str or not IMAGE.fullmatch(runtime["image"]) or runtime["platform"] != "linux/amd64":

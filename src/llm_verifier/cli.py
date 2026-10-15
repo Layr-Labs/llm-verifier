@@ -17,6 +17,18 @@ from .workflow import github_output, prepare, prepare_runtime
 def parser():
     p = argparse.ArgumentParser(prog="llm-verifier", description="Snapshot, execute, review and finalize in separate trust domains.")
     sub = p.add_subparsers(dest="command", required=True)
+    cmd = sub.add_parser("init", help="Create editable challenge source files")
+    cmd.add_argument("output")
+    cmd.add_argument("--name", required=True)
+    cmd.add_argument("--model", required=True)
+    for command, help_text in (("check", "Validate challenge source without execution"),
+                               ("test-checkers", "Run known-answer cases with the production Docker runner"),
+                               ("github", "Generate or refresh the Yukon manifest and pinned Actions caller")):
+        cmd = sub.add_parser(command, help=help_text)
+        cmd.add_argument("--root", required=True)
+        if command == "github":
+            cmd.add_argument("--verifier-repository", default="Layr-Labs/llm-verifier")
+            cmd.add_argument("--verifier-revision", required=True)
     def intake_options(cmd):
         cmd.add_argument("--root", required=True, help="Protected challenge root")
         cmd.add_argument("--config", default="verifier.json", help="Protected root-relative JSON configuration")
@@ -68,6 +80,17 @@ def parser():
 
 
 def run(args):
+    if args.command in {"init", "check", "test-checkers", "github"}:
+        from . import scaffold
+        from .jsonutil import canonical
+        if args.command == "init":
+            result = scaffold.initialize(args.output, args.name, args.model)
+        elif args.command == "github":
+            result = scaffold.github(args.root, args.verifier_repository, args.verifier_revision)
+        else:
+            result = scaffold.check(args.root) if args.command == "check" else scaffold.test_checkers(args.root)
+        print(canonical(result).decode())
+        return
     if args.command == "finalize":
         if args.score_dir:
             if not args.score_path:

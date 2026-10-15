@@ -38,10 +38,10 @@ through environment variables and are quoted. Bootstrap has no candidate imports
 
 ## Caller template
 
-Copy [benchmark.yml.example](benchmark.yml.example) to the challenge repository's
-`.github/workflows/benchmark.yml`. The template targets the internal repository
-`Layr-Labs/llm-verifier`. Replace both SHA placeholders with the same approved
-published full commit, and configure repository access before using the caller.
+Generate the caller and matching manifest with `llm-verifier github --root .
+--verifier-revision FULL_COMMIT`. See [authoring](authoring.md#yukon-and-github-actions)
+for the command and [the shared caller template](../src/llm_verifier/templates/benchmark.yml)
+for its source. Configure repository access before running it.
 The placeholders are not deployable commit hashes. Set the
 protected `root_dir` to the imported leaf path (or `.`), and use config/submission/
 score paths relative to that root. The examples' manifests refer to this filename.

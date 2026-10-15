@@ -34,12 +34,10 @@
     "requests": [],
     "judgment": {
       "valid": true,
-      "scores": [
-        5
-      ],
+      "scores": null,
       "reason": "The canonical pair passed; the diagnostic identical-message pair failed. Score is the canonical pair total_bytes only.",
       "accepted_claims": [
-        "The canonical declared pair is a collision for the toy target."
+        "claim:198e808ae8cd5fb17161b9b3f8065801d9720c2d175d5bd7d068fad1a1e89b60"
       ],
       "assumptions": [],
       "unresolved_obligations": [

@@ -6,8 +6,8 @@ bounded computational evidence in Docker, asks one OpenRouter reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-Version 0.2 supports scoped proofs, unscored lemmas, finite computational
-evidence, and protected organizer checkers required for numeric scoring. It is an LLM assessment, not formal certification or an
+Version 0.3 adds editable challenge starters, shared checker tests and deterministic
+score sources for proof claims and protected checker outputs. It is an LLM assessment, not formal certification or an
 authoritative benchmark. The examples and scripted results demonstrate
 plumbing, not mathematical reliability. The internal repository is
 `Layr-Labs/llm-verifier`. Publishing reviewed source internally does not validate
@@ -44,6 +44,17 @@ provider and execution results are visibly marked, and it writes a
 Yukon-compatible top-level score; ordinary finalization rejects any simulated
 phase. Injecting a custom provider, runner or OpenRouter transport also marks
 its artifacts as simulation. Production workflow inputs cannot select simulation.
+
+## Create a challenge
+
+```sh
+llm-verifier init my-challenge --name my-challenge --model PROVIDER/MODEL
+llm-verifier check --root my-challenge
+```
+
+Edit the generated rules, configuration and example submission directly. The
+[authoring guide](docs/authoring.md) covers proof files, deterministic scores,
+checker tests and the optional pinned Yukon/Actions caller.
 
 ## Independent phases
 
@@ -123,7 +134,7 @@ artifacts from the current trusted run may be consumed.
 
 The example manifests use one-track schema v2. Their `setupCommand` and
 `benchmarkCommand` are phase descriptors: intake and finalization. **Local
-`yukon run` is unsupported in v0.2.** Yukon invokes setup immediately before
+`yukon run` is unsupported.** Yukon invokes setup immediately before
 benchmark, without a pause for execution/review. Setup creates a new intake
 identity, so precomputing review artifacts does not make `yukon run` work.
 Use the independent `llm-verifier` phases above directly for local evaluation.

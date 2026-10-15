@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "id": "triangular-bound",
+  "rules_path": "rules.md",
+  "review_standard": "scoped-mathematical-review-v1",
+  "objectives": [
+    {
+      "name": "coefficient",
+      "direction": "+",
+      "unit": "coefficient of n²",
+      "semantics": "The declared rational coefficient in the accepted all-n inequality.",
+      "score_source": {"claim": 0}
+    }
+  ],
+  "allow_unscored": true,
+  "policies": {"scoring": {}, "validity": {}},
+  "supported_policies": {
+    "scoring": [{"selector": {}, "instructions": "Use the configured score source."}],
+    "validity": [{"selector": {}, "instructions": "Apply rules.md to the complete claim and proof."}]
+  },
+  "provider": {"model": "ORGANIZER/MODEL"},
+  "limits": {"max_followups": 0}
+}

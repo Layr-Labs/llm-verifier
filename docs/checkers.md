@@ -1,11 +1,11 @@
-# Protected checkers and required numeric scores (0.2.0)
+# Protected checkers and required numeric scores
 
 An organizer can register bounded Python checks under the protected challenge
 root. A solver selects initial checks by ID and JSON data; the judge can select
 registered checks in its existing single follow-up batch. Every declared check
 runs initially. This adds no phase, model loop, dependency or external service.
 Configurations and submissions without these optional fields keep their prior
-behavior. Config/submission wire versions remain `1`; package version is `0.2.0`.
+behavior. Config/submission wire versions remain `1`.
 Artifacts are bound to every installed verifier source file and package version,
 so artifacts from 0.1 or a different source revision must restart at intake.
 
@@ -173,3 +173,8 @@ llm-verifier experiments --intake .work/collision-intake.json --out .work/collis
 
 No model call is needed for those phases. The complete phase sequence is in the
 README; do not run review commands without separately authorizing model use.
+
+For deterministic projection of a required numeric checker field, configure an
+objective `score_source` as described in [authoring.md](authoring.md#score-sources).
+Run known-answer cases through `llm-verifier test-checkers`; it uses the same
+production runner and output validation.

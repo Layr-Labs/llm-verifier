@@ -7,6 +7,7 @@ bind artifacts on the trusted organizer channel; they are not signatures.
 from .errors import VerifierError
 from .input_schema import validate_value
 from .jsonutil import canonical, digest
+from .scoring import bindings
 
 
 def execution_source(data, request):
@@ -67,7 +68,11 @@ def score_gate(data, initial, followup=None):
         required.append({"check": checker["id"], "declared_input_sha256": digest(inputs) if declared else None,
                          "status": "satisfied" if passing else "unsatisfied" if declared else "missing_declaration",
                          "passing_runs": passing})
-    return {"satisfied": all(c["status"] == "satisfied" for c in required), "required": required}
+    gate = {"satisfied": all(c["status"] == "satisfied" for c in required), "required": required}
+    bound = bindings(data, runs, required)
+    if bound:
+        gate["bindings"] = bound
+    return gate
 
 
 def enforce_score_gate(judgment, gate):

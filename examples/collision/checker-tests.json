@@ -1,0 +1,25 @@
+[
+  {
+    "id": "collision",
+    "check": "collision",
+    "inputs": {
+      "left": "m3",
+      "right": "m17"
+    },
+    "expected": {
+      "passed": true,
+      "total_bytes": 5
+    }
+  },
+  {
+    "id": "identical-messages",
+    "check": "collision",
+    "inputs": {
+      "left": "m3",
+      "right": "m3"
+    },
+    "expected": {
+      "passed": false
+    }
+  }
+]

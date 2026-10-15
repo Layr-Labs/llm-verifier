@@ -4,6 +4,7 @@ from .config import identifier
 from .errors import VerifierError
 from .files import relative, validate_files
 from .input_schema import validate_schema, validate_value
+from .scoring import validate_claim
 from .jsonutil import canonical, keys, loads, text
 
 
@@ -20,7 +21,7 @@ def manifest_from(files, limits, checkers=()):
     if type(claims) is not list or not 1 <= len(claims) <= 32:
         raise VerifierError("claim_count")
     for claim in claims:
-        text(claim, 8000)
+        validate_claim(claim, files)
     entries = manifest["experiments"]
     if type(entries) is not list or len(entries) > 16:
         raise VerifierError("experiment_count")

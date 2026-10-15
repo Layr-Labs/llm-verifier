@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llm-verifier"
-version = "0.3.0a1"
+version = "0.3.0a2"
 description = "Bounded, artifact-bound mathematical review with isolated evidence execution"
 requires-python = ">=3.11"
 readme = "README.md"
@@ -17,4 +17,4 @@ llm-verifier = "llm_verifier.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-llm_verifier = ["templates/benchmark.yml", "templates/starter/*", "templates/starter/.gitignore", "templates/starter/submission/*"]
+llm_verifier = ["templates/*.yml", "templates/starter/*", "templates/starter/.gitignore", "templates/starter/submission/*"]

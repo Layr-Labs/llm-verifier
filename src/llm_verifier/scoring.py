@@ -54,7 +54,36 @@ def validate_claim(claim, files):
         raise VerifierError("duplicate_claim_evidence")
 
 
+def meets_minimum(record, objective):
+    """Compare exact proof rationals (or numeric checker outputs), before rounding."""
+    if "score_minimum" not in objective or record == "positive_infinity":
+        return True
+    minimum = objective["score_minimum"]
+    bound = Fraction(int(minimum["numerator"]), int(minimum["denominator"]))
+    exact = (Fraction(int(record["numerator"]), int(record["denominator"]))
+             if type(record) is dict else Fraction(record))
+    return exact >= bound
+
+
+def validate_objective_claims(objectives, claims):
+    for objective in objectives:
+        source = objective.get("score_source", {})
+        if "claim" not in source or source["claim"] >= len(claims):
+            continue
+        claim = claims[source["claim"]]
+        if type(claim) is not dict:
+            continue  # An unscored lemma needs no numeric declaration.
+        if not meets_minimum(claim["score"], objective):
+            raise VerifierError("score_below_minimum")
+
+
 def validate_sources(objectives, checkers):
+    for objective in objectives:
+        if "score_minimum" in objective:
+            if "score_source" not in objective:
+                raise VerifierError("score_minimum_requires_source")
+            if score_value(objective["score_minimum"]) is None:
+                raise VerifierError("finite_score_minimum_required")
     sources = [o.get("score_source") for o in objectives]
     if not any(s is not None for s in sources):
         return
@@ -79,6 +108,7 @@ def validate_sources(objectives, checkers):
 
 
 def bindings(data, runs, required):
+    validate_objective_claims(data["effective"]["config"]["objectives"], data["manifest"]["claims"])
     result = []
     by_run = {run["id"]: run for run in runs}
     by_check = {check["check"]: check for check in required}
@@ -107,7 +137,7 @@ def bindings(data, runs, required):
                     status = "conflicting_results"
                 else:
                     record = value = values[0]
-                    status = "ready"
+                    status = "ready" if meets_minimum(record, objective) else "below_minimum"
         result.append({"objective": objective["name"], "source": source, "claim_id": claim_id,
                        "status": status, "record": record, "value": value})
     return result

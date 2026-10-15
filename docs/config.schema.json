@@ -81,6 +81,27 @@
                 }
               }
             ]
+          },
+          "score_minimum": {
+            "type": "object",
+            "description": "Inclusive exact lower bound for a score_source objective; reduced finite rational. Enforced independently of model acceptance.",
+            "properties": {
+              "numerator": {
+                "type": "string",
+                "pattern": "^(0|-?[1-9][0-9]*)$",
+                "maxLength": 256
+              },
+              "denominator": {
+                "type": "string",
+                "pattern": "^[1-9][0-9]*$",
+                "maxLength": 256
+              }
+            },
+            "required": [
+              "numerator",
+              "denominator"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

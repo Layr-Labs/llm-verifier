@@ -51,7 +51,7 @@ def normalize(raw):
         raise VerifierError("objective_count")
     names = set()
     for item in objectives:
-        keys(item, {"name", "direction", "unit", "semantics"}, {"score_source"})
+        keys(item, {"name", "direction", "unit", "semantics"}, {"score_source", "score_minimum"})
         identifier(item["name"])
         if item["name"] in names or item["direction"] not in ("+", "-"):
             raise VerifierError("objective_identity")

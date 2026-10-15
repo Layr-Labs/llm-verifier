@@ -150,3 +150,90 @@ class ScoringSources(unittest.TestCase):
                            lambda c:c['objectives'][0].update(score_source={'claim':True})):
                 c=copy.deepcopy(effective['config']);change(c)
                 with self.assertRaises(VerifierError):normalize(c)
+
+
+class ScoreMinimum(unittest.TestCase):
+    @staticmethod
+    def zero(config):
+        config['objectives'][0]['score_minimum']={'numerator':'0','denominator':'1'}
+
+    def test_negative_rejected_by_check_intake_and_consumed_artifacts(self):
+        from llm_verifier.artifacts import verify_intake
+        from llm_verifier.jsonutil import digest
+        with starter() as (root,_,_):
+            config=read_json(root/'verifier.json'); self.zero(config)
+            write_json(root/'verifier.json',config)
+            submission=read_json(root/'submission/submission.json')
+            submission['claims'][0]['score']={'numerator':'-1','denominator':'1'}
+            write_json(root/'submission/submission.json',submission)
+            with self.assertRaisesRegex(VerifierError,'score_below_minimum'):
+                scaffold.check(root)
+            effective=load_config(root,'verifier.json','submission')
+            with self.assertRaisesRegex(VerifierError,'score_below_minimum'):
+                intake_snapshot(effective,root/'submission')
+        # Exercise the consuming boundary independently of the intake constructor.
+        with starter(change=lambda s:s['claims'][0].update(score={'numerator':'-1','denominator':'1'})) as (_,_,intake):
+            self.zero(intake['data']['effective']['config'])
+            intake['bindings']['config']=digest(intake['data']['effective'])
+            constrained=reseal(intake)
+            with self.assertRaisesRegex(VerifierError,'score_below_minimum'):
+                verify_intake(constrained)
+            with self.assertRaisesRegex(VerifierError,'score_below_minimum'):
+                pipeline.execute(constrained)
+
+    def test_zero_positive_and_infinity_keep_exact_records(self):
+        for score,expected in [({'numerator':'0','denominator':'1'},[0.0]),
+                               ({'numerator':'31','denominator':'10'},[3.1]),
+                               ('positive_infinity',None)]:
+            with self.subTest(score=score),starter(change=lambda s:s['claims'][0].update(score=score),configure=self.zero) as (_,_,intake):
+                initial=pipeline.execute(intake)
+                first=judge(intake,initial,verdict(intake,initial))
+                data=pipeline.dossier(intake,initial,first)['data']
+                self.assertEqual(data['judgment']['scores'],expected)
+                self.assertEqual(data['score_records'][0]['record'],score)
+        with starter(change=lambda s:s.update(claims=['An unscored partial lemma.']),configure=self.zero) as (_,_,intake):
+            initial=pipeline.execute(intake)
+            first=judge(intake,initial,verdict(intake,initial,accepted=['An unscored partial lemma.']))
+            self.assertIsNone(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'])
+
+    def test_minimum_is_exact_and_unconstrained_negative_scores_still_work(self):
+        minimum={'numerator':'9007199254740993','denominator':'9007199254740992'}
+        self.assertEqual(score_value(minimum),1.0)
+        with self.assertRaisesRegex(VerifierError,'score_below_minimum'):
+            with starter(change=lambda s:s['claims'][0].update(score={'numerator':'1','denominator':'1'}),
+                         configure=lambda c:c['objectives'][0].update(score_minimum=minimum)):
+                pass
+        with starter(change=lambda s:s['claims'][0].update(score={'numerator':'-1','denominator':'1'})) as (_,_,intake):
+            initial=pipeline.execute(intake)
+            first=judge(intake,initial,verdict(intake,initial))
+            self.assertEqual(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'],[-1.0])
+
+    def test_below_minimum_checker_acceptance_cannot_score(self):
+        def configure(c):
+            checker_source(c)
+            c['objectives'][0]['score_minimum']={'numerator':'6','denominator':'1'}
+        with registered(config_change=configure) as (_,_,intake):
+            for value in (5,6):
+                initial=initial_run(intake,result({'passed':True,'value':value}))
+                decision=verdict(intake,initial)
+                if value==5:
+                    self.assertEqual(score_gate(intake['data'],initial)['bindings'][0]['status'],'below_minimum')
+                    with self.assertRaisesRegex(VerifierError,'accepted_score_source_unavailable'):
+                        judge(intake,initial,decision)
+                    first=judge(intake,initial,verdict(intake,initial,accepted=['Only an auxiliary lemma.']))
+                    self.assertIsNone(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'])
+                else:
+                    first=judge(intake,initial,decision)
+                    self.assertEqual(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'],[6])
+
+    def test_invalid_minimum_configuration(self):
+        with starter() as (_,effective,_):
+            for minimum in (0,True,None,'positive_infinity',{'numerator':'2','denominator':'4'},
+                            {'numerator':'0','denominator':'1','extra':True}):
+                with self.subTest(minimum=minimum):
+                    config=copy.deepcopy(effective['config'])
+                    config['objectives'][0]['score_minimum']=minimum
+                    with self.assertRaises(VerifierError):normalize(config)
+            config=copy.deepcopy(effective['config']);self.zero(config)
+            del config['objectives'][0]['score_source']
+            with self.assertRaisesRegex(VerifierError,'score_minimum_requires_source'):normalize(config)

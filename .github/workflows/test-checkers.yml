@@ -1,0 +1,117 @@
+name: Shared challenge checker tests
+
+on:
+  workflow_call:
+    inputs:
+      verifier_repository:
+        type: string
+        required: true
+      verifier_revision:
+        type: string
+        required: true
+      root_dir:
+        type: string
+        default: '.'
+    secrets:
+      VERIFIER_CHECKOUT_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Prepare pinned checker package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      VERIFIER_REPOSITORY: ${{ inputs.verifier_repository }}
+      VERIFIER_REVISION: ${{ inputs.verifier_revision }}
+      CANDIDATE_REVISION: ${{ github.sha }}
+      ROOT_DIR: ${{ inputs.root_dir }}
+    steps:
+      - name: Require matching immutable workflow and source pins
+        env:
+          CALLED_WORKFLOW: ${{ toJSON(job) }}
+        shell: bash
+        run: |
+          [[ "$VERIFIER_REVISION" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          [[ "$VERIFIER_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || exit 1
+          python3 - <<'PY'
+          import json, os
+          called = json.loads(os.environ["CALLED_WORKFLOW"])
+          if called.get("workflow_repository") != os.environ["VERIFIER_REPOSITORY"] or called.get("workflow_sha") != os.environ["VERIFIER_REVISION"]:
+              raise SystemExit("Called workflow and implementation pins must match (GitHub.com job workflow identity required)")
+          PY
+      - name: Checkout challenge event revision
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          ref: ${{ github.sha }}
+          path: challenge
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Checkout pinned verifier
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: ${{ inputs.verifier_repository }}
+          ref: ${{ inputs.verifier_revision }}
+          token: ${{ secrets.VERIFIER_CHECKOUT_TOKEN || github.token }}
+          path: verifier
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Build wheel and verify checkout identities
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/llmv-env"
+          "$RUNNER_TEMP/llmv-env/bin/python" -m pip wheel --no-deps ./verifier --wheel-dir "$RUNNER_TEMP/checker-package/wheel"
+          "$RUNNER_TEMP/llmv-env/bin/python" -m pip install --no-index --no-deps "$RUNNER_TEMP"/checker-package/wheel/*.whl
+          "$RUNNER_TEMP/llmv-env/bin/python" - <<'PY'
+          import os
+          from pathlib import Path
+          from llm_verifier.files import directory_fd, relative
+          from llm_verifier.workflow import checkout_revision
+          workspace = Path(os.environ["GITHUB_WORKSPACE"])
+          checkout_revision(workspace / "challenge", os.environ["CANDIDATE_REVISION"])
+          checkout_revision(workspace / "verifier", os.environ["VERIFIER_REVISION"])
+          with directory_fd(workspace / "challenge" / relative(os.environ["ROOT_DIR"], dot=True)):
+              pass
+          PY
+          git -C "$GITHUB_WORKSPACE/challenge" archive --format=tar --output="$RUNNER_TEMP/checker-package/challenge.tar" HEAD
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: llmv-checker-package
+          path: ${{ runner.temp }}/checker-package/
+          if-no-files-found: error
+          retention-days: 7
+
+  checkers:
+    name: Run challenge checker cases without supplied credentials
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      ROOT_DIR: ${{ inputs.root_dir }}
+    steps:
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
+        with:
+          name: llmv-checker-package
+          path: ${{ runner.temp }}/checker-package/
+      - name: Install prepared wheel and restore challenge source
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/llmv-env"
+          "$RUNNER_TEMP/llmv-env/bin/python" -m pip install --no-index --no-deps "$RUNNER_TEMP"/checker-package/wheel/*.whl
+          mkdir "$RUNNER_TEMP/challenge"
+          tar -xf "$RUNNER_TEMP/checker-package/challenge.tar" -C "$RUNNER_TEMP/challenge"
+      - name: Validate and run production checker tests
+        shell: bash
+        run: |
+          root="$RUNNER_TEMP/challenge/$ROOT_DIR"
+          cli="$RUNNER_TEMP/llmv-env/bin/llm-verifier"
+          env -i PATH="$PATH" "$cli" check --root "$root"
+          env -i PATH="$PATH" "$cli" intake --root "$root" --out "$RUNNER_TEMP/checker-intake.json"
+          env -i PATH="$PATH" "$cli" prepare-runtime --phase followup --intake "$RUNNER_TEMP/checker-intake.json"
+          env -i PATH="$PATH" "$cli" test-checkers --root "$root"

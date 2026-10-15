@@ -1,0 +1,13 @@
+name: Checker tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  checkers:
+    uses: VERIFIER_REPOSITORY/.github/workflows/test-checkers.yml@VERIFIER_REVISION
+    with:
+      verifier_repository: VERIFIER_REPOSITORY
+      verifier_revision: VERIFIER_REVISION
+      root_dir: '.'
+    secrets:
+      VERIFIER_CHECKOUT_TOKEN: ${{ secrets.VERIFIER_CHECKOUT_TOKEN }}

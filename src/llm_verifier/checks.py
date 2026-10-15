@@ -7,6 +7,7 @@ bind artifacts on the trusted organizer channel; they are not signatures.
 from .errors import VerifierError
 from .input_schema import validate_value
 from .jsonutil import canonical, digest
+from .score_binding import derive_bindings, enforce_bindings
 
 
 def execution_source(data, request):
@@ -43,7 +44,7 @@ def check_validation(entry, execution):
 
 
 def score_gate(data, initial, followup=None):
-    """Derive only static categories, IDs and hashes for the system message.
+    """Derive static categories, IDs, hashes and strictly typed score records.
 
     All reports must already be verified against this intake and exact plans.
     Judge-selected different inputs remain scoped evidence, never replacements
@@ -67,10 +68,15 @@ def score_gate(data, initial, followup=None):
         required.append({"check": checker["id"], "declared_input_sha256": digest(inputs) if declared else None,
                          "status": "satisfied" if passing else "unsatisfied" if declared else "missing_declaration",
                          "passing_runs": passing})
-    return {"satisfied": all(c["status"] == "satisfied" for c in required), "required": required}
+    gate = {"satisfied": all(c["status"] == "satisfied" for c in required), "required": required}
+    bindings = derive_bindings(data, runs, required)
+    if bindings:
+        gate["bindings"] = bindings
+    return gate
 
 
 def enforce_score_gate(judgment, gate):
     # Deliberately independent of judgment validity and requested Yukon fields.
     if judgment["scores"] is not None and not gate["satisfied"]:
         raise VerifierError("required_score_checks_unsatisfied")
+    enforce_bindings(judgment, gate)

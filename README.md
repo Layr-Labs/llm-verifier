@@ -6,7 +6,8 @@ bounded computational evidence in Docker, asks one OpenRouter reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-Version 0.2 supports scoped proofs, unscored lemmas, finite computational
+Version 0.3 adds [approved-definition scaffolding](docs/scaffolding.md) and
+[protected rational/terminal score binding](docs/score-binding.md). It supports scoped proofs, unscored lemmas, finite computational
 evidence, and protected organizer checkers required for numeric scoring. It is an LLM assessment, not formal certification or an
 authoritative benchmark. The examples and scripted results demonstrate
 plumbing, not mathematical reliability. The internal repository is
@@ -106,6 +107,12 @@ workflow always does this. Hashes detect changes and cross-evaluation replay;
 artifacts from the current trusted run may be consumed.
 
 ## Challenge configuration and examples
+
+Create a new challenge with `llm-verifier init` from the complete
+[collision starter definition](examples/collision.definition.json). The
+[builder guide](docs/scaffolding.md) covers explicit model/revision selection,
+external controller receipts, managed edit maps and credential-free public CI.
+
 
 - [Proof-only lemma](examples/proof): accepts a relevant two-variable lemma with
   `scores: null`. It reserves one genuine full-target objective to fit Yukon's

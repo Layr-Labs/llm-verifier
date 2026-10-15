@@ -90,3 +90,29 @@ performed.
 The gate verifies a scoped predicate, not arbitrary objective values or broader
 mathematical claims. Local `yukon run` and every non-null admission policy remain
 unsupported. See [protected checks](checkers.md) for the exact limits.
+
+## Approved-definition scaffolding and score binding / 0.3.0 (2026-10-15)
+
+Started from upstream master `5b67e8d51c3bd1f9c245c3f0978fe8f9bf2b1c8d`.
+The unchanged baseline passed all 87 unique tests (82 offline plus five separately
+gated real Docker tests). New tests cover exact accepted-claim identity, numeric
+mismatches, malformed/reduced rationals, binary64 precision limits, terminal
+classification, mixed-objective null tuples, conflicting canonical retries,
+invalid/hidden-score judgments, and stale-output cleanup.
+
+Generator tests use fresh temporary directories and cover round trips, exact
+source/rule preservation, immutable pins/model selection, trusted external
+receipt and protected-file validation, forged inventories, source path/symlink
+boundaries, no-overwrite behavior, configured rules paths, bounded public checker
+capture and subprocess CLI init/context/check. The generated collision starter
+completed its two scripted branches and its two real Docker public checker
+cases without model credentials. Public conformance is not mathematical
+qualification. Source and generated workflows pass actionlint.
+
+CircuitBreaker dogfooding found missing required simulation fields and missing
+source evidence references in authored fixtures; the generator rejected both
+before exporting a challenge. Its scientific-content owner corrected those
+cases. Long scientific proof payloads still share the existing aggregate 16 KiB
+input bound; chunking does not bypass it. Exact rational and terminal semantic
+records have separate documented Yukon transport limitations. No platform schema
+or repository access settings were changed by this work.

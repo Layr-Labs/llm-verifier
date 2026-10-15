@@ -17,6 +17,20 @@ from .workflow import github_output, prepare, prepare_runtime
 def parser():
     p = argparse.ArgumentParser(prog="llm-verifier", description="Snapshot, execute, review and finalize in separate trust domains.")
     sub = p.add_subparsers(dest="command", required=True)
+    cmd = sub.add_parser("init", help="Generate a generic challenge from an approved external definition")
+    cmd.add_argument("--definition", required=True)
+    cmd.add_argument("--output", required=True)
+    cmd.add_argument("--receipt", help="External controller receipt (default: OUTPUT.receipt.json)")
+    cmd.add_argument("--verifier-repository", required=True)
+    cmd.add_argument("--verifier-revision", required=True)
+    cmd.add_argument("--model", required=True)
+    for name in ("context", "check"):
+        cmd = sub.add_parser(name, help="Read edit map or validate scaffold and scripted public cases offline")
+        cmd.add_argument("--root", required=True)
+        cmd.add_argument("--definition", required=name == "check")
+        cmd.add_argument("--receipt", required=name == "check")
+        if name == "context":
+            cmd.add_argument("--task", choices=("build", "validate", "solve"), required=True)
     def intake_options(cmd):
         cmd.add_argument("--root", required=True, help="Protected challenge root")
         cmd.add_argument("--config", default="verifier.json", help="Protected root-relative JSON configuration")
@@ -68,6 +82,19 @@ def parser():
 
 
 def run(args):
+    if args.command in {"init", "context", "check"}:
+        from . import scaffold
+        from .jsonutil import canonical
+        raw = read_json(args.definition) if args.definition else None
+        if args.command == "init":
+            selected = scaffold.options(args.verifier_repository, args.verifier_revision, args.model)
+            result = scaffold.initialize(raw, args.output, selected, args.receipt)
+        else:
+            receipt = read_json(args.receipt) if args.receipt else None
+            result = (scaffold.check(args.root, raw, receipt) if args.command == "check" else
+                      scaffold.context(args.root, args.task, raw, receipt))
+        print(canonical(result).decode())
+        return
     if args.command == "finalize":
         if args.score_dir:
             if not args.score_path:

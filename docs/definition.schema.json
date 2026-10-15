@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Approved generic llm-verifier definition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "name",
+    "description",
+    "verifier",
+    "files",
+    "edit_paths",
+    "conformance"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "verifier": {
+      "$ref": "config.schema.json"
+    },
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 128,
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Safe root-relative public UTF-8 files; reserved paths, byte limits, source bundle membership and edit map checked locally."
+    },
+    "edit_paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "conformance": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "submission_path",
+          "script_path",
+          "expected"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "submission_path": {
+            "type": "string"
+          },
+          "script_path": {
+            "type": "string"
+          },
+          "expected": {
+            "type": "object",
+            "required": [
+              "valid",
+              "scores"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "valid": {
+                "type": "boolean"
+              },
+              "scores": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "number"
+                }
+              },
+              "score_records": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      }
+    },
+    "checker_cases": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "check",
+          "inputs",
+          "expected"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "object"
+          },
+          "expected": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  }
+}

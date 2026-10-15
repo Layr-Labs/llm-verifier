@@ -47,6 +47,30 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4000
+          },
+          "score_binding": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "version",
+              "check",
+              "field"
+            ],
+            "properties": {
+              "version": {
+                "const": 1
+              },
+              "check": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+              },
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            },
+            "description": "Optional v1 binding to a required protected checker output record; exact claim acceptance and finite/terminal semantics enforced locally."
           }
         },
         "required": [

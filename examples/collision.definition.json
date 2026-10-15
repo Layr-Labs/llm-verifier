@@ -1,0 +1,182 @@
+{
+  "version": 1,
+  "name": "generated-toy-collision",
+  "description": "Toy eight-bit collision; protected known-answer tests and scoped review.",
+  "verifier": {
+    "version": 1,
+    "id": "toy-truncated-collision",
+    "rules_path": "rules.md",
+    "review_standard": "scoped-mathematical-review-v1",
+    "objectives": [
+      {
+        "name": "total_bytes",
+        "direction": "-",
+        "unit": "UTF-8 bytes",
+        "semantics": "Exactly the total_bytes from a passing collision checker result for the submission-declared canonical left/right witness under the protected toy target. Smaller is better. Never score a different judge-selected pair, claim global optimality, or substitute complexity/probability/confidence."
+      }
+    ],
+    "allow_unscored": true,
+    "policies": {
+      "scoring": {
+        "version": "toy-witness-bytes-v1"
+      },
+      "validity": {
+        "version": "scoped-claims-v1"
+      }
+    },
+    "supported_policies": {
+      "scoring": [
+        {
+          "selector": {
+            "version": "toy-witness-bytes-v1"
+          },
+          "instructions": "Numeric scoring requires the collision gate and a legitimate checked canonical pair. Return its exact total_bytes only; no global optimality or statistical/complexity inference. Relevant lemmas may be valid with scores=null."
+        }
+      ],
+      "validity": [
+        {
+          "selector": {
+            "version": "scoped-claims-v1"
+          },
+          "instructions": "Check the exact scope of accepted claims. State assumptions and unresolved obligations. A standalone relevant lemma may be valid without proving the full challenge."
+        }
+      ]
+    },
+    "provider": {
+      "model": "ORGANIZER/MODEL",
+      "response_format": "json_schema"
+    },
+    "limits": {
+      "max_followups": 3
+    },
+    "checkers": [
+      {
+        "id": "collision",
+        "description": "Check distinct UTF-8 messages collide for the protected TOY eight-bit truncated SHA-256 target. Verifies only this concrete pair.",
+        "source": "checkers/collision.py",
+        "files": [
+          "checkers/collision.py",
+          "checkers/target.json"
+        ],
+        "input_schema": {
+          "type": "object",
+          "properties": {
+            "left": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "right": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          "required": [
+            "left",
+            "right"
+          ],
+          "additionalProperties": false
+        },
+        "output_schema": {
+          "type": "object",
+          "properties": {
+            "passed": {
+              "type": "boolean"
+            },
+            "target_bits": {
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 8
+            },
+            "digest_hex": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 2
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 2,
+              "maximum": 512
+            }
+          },
+          "required": [
+            "passed",
+            "target_bits",
+            "digest_hex",
+            "total_bytes"
+          ],
+          "additionalProperties": false
+        },
+        "required_for_score": true
+      }
+    ]
+  },
+  "files": {
+    "checkers/collision.py": "\"\"\"Organizer-owned TOY collision checker, not a full hash challenge verifier.\"\"\"\nimport hashlib\nimport json\nfrom pathlib import Path\nimport sys\n\n# Fixed protected path, never a path/source/target supplied by the requester.\ntarget = json.loads(Path(\"/snapshot/files/checkers/target.json\").read_text())\nassert target[\"bits\"] == 8\ninputs = json.load(sys.stdin)\nleft, right = inputs[\"left\"].encode(\"utf-8\"), inputs[\"right\"].encode(\"utf-8\")\nprefix = target[\"prefix\"].encode(\"utf-8\")\na = hashlib.sha256(prefix + left).hexdigest()[:2]\nb = hashlib.sha256(prefix + right).hexdigest()[:2]\nprint(json.dumps({\"passed\": left != right and a == b, \"target_bits\": 8,\n                  \"digest_hex\": a, \"total_bytes\": len(left) + len(right)}))\n",
+    "checkers/target.json": "{\n  \"label\": \"TOY ONLY: eight-bit truncation, not full SHA-256\",\n  \"prefix\": \"llmv-toy-v1:\",\n  \"bits\": 8\n}\n",
+    "lemma/proof.md": "# Existence lemma\n\nAn eight-bit function has at most 256 outputs. Applying it to 257 distinct messages maps two of them to the same output by the pigeonhole principle. This supplies no concrete pair or score.\n",
+    "lemma/submission.json": "{\n  \"version\": 1,\n  \"title\": \"Toy target existence lemma without a witness\",\n  \"claims\": [\n    \"Among 257 distinct UTF-8 messages some pair collides for any fixed eight-bit target.\"\n  ],\n  \"experiments\": []\n}\n",
+    "rules.md": "# TOY eight-bit collision challenge\n\nThe target is the first eight bits of SHA-256(prefix || message), with exact prefix\nand truncation fixed by checkers/target.json. Inputs are distinct UTF-8 strings,\nnot filenames, code, alternative target parameters or supplied digest values.\nOnly the organizer collision checker establishes this concrete pair's predicate.\n\nFor numeric scoring the single submission-declared canonical pair must pass.\nThe only objective is the checker's total_bytes for that exact passing pair.\nThe judge must bind its tuple to that result and reject conflicting score claims.\nDifferent pairs tried in follow-up cannot replace the declared witness.\nA pass does not establish search complexity, success probability, global\noptimality, or a collision in full SHA-256. Review such claims separately.\n\nA correct relevant lemma may be accepted with scores=null and no concrete pair.\nA missing or failed required check forbids every non-null tuple, including an\ninvalid judgment. allow_unscored does not excuse an unsupported validity claim.\n\nThis is a small teaching example, not HashSmash support or cryptographic evidence.\n",
+    "simulation.json": "{\n  \"initial_results\": [\n    {\n      \"passed\": true,\n      \"target_bits\": 8,\n      \"digest_hex\": \"bd\",\n      \"total_bytes\": 5\n    }\n  ],\n  \"initial_decision\": {\n    \"kind\": \"followup\",\n    \"judgment\": null,\n    \"requests\": [\n      {\n        \"check\": \"collision\",\n        \"inputs\": {\n          \"left\": \"m3\",\n          \"right\": \"m3\"\n        },\n        \"reason\": \"Confirm that identical messages are rejected; keep the original declared pair for scoring.\"\n      }\n    ]\n  },\n  \"followup_results\": [\n    {\n      \"passed\": false,\n      \"target_bits\": 8,\n      \"digest_hex\": \"bd\",\n      \"total_bytes\": 4\n    }\n  ],\n  \"final_decision\": {\n    \"kind\": \"judgment\",\n    \"requests\": [],\n    \"judgment\": {\n      \"valid\": true,\n      \"scores\": [\n        5\n      ],\n      \"reason\": \"The canonical pair passed; the diagnostic identical-message pair failed. Score is the canonical pair total_bytes only.\",\n      \"accepted_claims\": [\n        \"The canonical declared pair is a collision for the toy target.\"\n      ],\n      \"assumptions\": [],\n      \"unresolved_obligations\": [\n        \"No full SHA-256 collision, complexity, probability or global optimality established.\"\n      ],\n      \"evidence_refs\": [\n        \"run:initial:0\",\n        \"run:followup:0\"\n      ],\n      \"review_standard\": \"scoped-mathematical-review-v1\"\n    }\n  }\n}\n",
+    "submission/proof.md": "# Toy witness\n\nThe declared messages are `m3` and `m17`. The organizer checker must independently verify distinctness and target equality. Their total UTF-8 size is 5 bytes. This claims neither a collision for full SHA-256 nor an optimal search algorithm.\n",
+    "submission/submission.json": "{\n  \"version\": 1,\n  \"title\": \"A concrete collision for a TOY eight-bit target\",\n  \"claims\": [\n    \"The declared distinct pair collides under the protected toy target; no full SHA-256 collision or optimality claim.\"\n  ],\n  \"experiments\": [],\n  \"checks\": [\n    {\n      \"check\": \"collision\",\n      \"inputs\": {\n        \"left\": \"m3\",\n        \"right\": \"m17\"\n      }\n    }\n  ]\n}\n",
+    "unscored-simulation.json": "{\n  \"initial_results\": [],\n  \"initial_decision\": {\n    \"kind\": \"judgment\",\n    \"requests\": [],\n    \"judgment\": {\n      \"valid\": true,\n      \"scores\": null,\n      \"reason\": \"A relevant abstract lemma supplies no concrete pair; the required score check is missing, so scores remain null.\",\n      \"accepted_claims\": [\n        \"The pigeonhole existence lemma holds.\"\n      ],\n      \"assumptions\": [],\n      \"unresolved_obligations\": [\n        \"No full SHA-256 collision, complexity, probability or global optimality established.\"\n      ],\n      \"evidence_refs\": [\n        \"source:proof.md\"\n      ],\n      \"review_standard\": \"scoped-mathematical-review-v1\"\n    }\n  },\n  \"followup_results\": [],\n  \"final_decision\": null\n}\n"
+  },
+  "edit_paths": [
+    "submission/proof.md",
+    "submission/submission.json"
+  ],
+  "conformance": [
+    {
+      "id": "collision",
+      "submission_path": "submission",
+      "script_path": "simulation.json",
+      "expected": {
+        "valid": true,
+        "scores": [
+          5
+        ]
+      }
+    },
+    {
+      "id": "lemma",
+      "submission_path": "lemma",
+      "script_path": "unscored-simulation.json",
+      "expected": {
+        "valid": true,
+        "scores": null
+      }
+    }
+  ],
+  "checker_cases": [
+    {
+      "id": "collision",
+      "check": "collision",
+      "inputs": {
+        "left": "m3",
+        "right": "m17"
+      },
+      "expected": {
+        "passed": true,
+        "target_bits": 8,
+        "digest_hex": "bd",
+        "total_bytes": 5
+      }
+    },
+    {
+      "id": "identical",
+      "check": "collision",
+      "inputs": {
+        "left": "m3",
+        "right": "m3"
+      },
+      "expected": {
+        "passed": false,
+        "target_bits": 8,
+        "digest_hex": "bd",
+        "total_bytes": 4
+      }
+    }
+  ]
+}

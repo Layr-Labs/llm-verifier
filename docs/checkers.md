@@ -135,8 +135,10 @@ The dossier records the derived gate; Yukon output fields are unchanged.
 The gate permits scoring; it does **not** compute, validate or authorize arbitrary
 LLM objective values. Protected challenge rules must bind each objective to the
 checked canonical witness and explain permitted units/interpretation. The judge
-must review that relationship. Objective equality is not a generic deterministic
-feature of this registry. Probability, expected cost, algorithmic complexity,
+must review that relationship. The base gate does not enforce objective equality. Version 0.3 adds optional
+[protected objective bindings](score-binding.md), including exact main-claim
+acceptance, retained rational records and an explicitly unsupported terminal
+Yukon projection. Probability, expected cost, algorithmic complexity,
 optimality and claims beyond the checked predicate require separate evidence or
 proof. A lying/mistaken protected checker is outside this integrity guarantee;
 organizers must review their checker implementation and target selection.

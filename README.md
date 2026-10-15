@@ -6,9 +6,9 @@ bounded computational evidence in Docker, asks one OpenRouter reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-This initial implementation supports scoped proofs, unscored lemmas, and finite
-computational evidence. It is an LLM assessment, not formal certification or an
-authoritative benchmark. The two examples and scripted results demonstrate
+Version 0.2 supports scoped proofs, unscored lemmas, finite computational
+evidence, and protected organizer checkers required for numeric scoring. It is an LLM assessment, not formal certification or an
+authoritative benchmark. The examples and scripted results demonstrate
 plumbing, not mathematical reliability. The internal repository is
 `Layr-Labs/llm-verifier`. Publishing reviewed source internally does not validate
 hosted execution. No live model calls, hosted Actions run, challenge import or
@@ -57,8 +57,9 @@ llm-verifier experiments --intake .work/intake.json --out .work/initial.json
 ```
 
 These commands need no model credential. `prepare-runtime` explicitly pulls the
-organizer's digest-pinned image; execution uses `--pull=never`. Proof-only intake
-with no experiment declarations requires no Docker service. Docker execution is
+organizer's digest-pinned image when the selected phase can execute work; execution
+uses `--pull=never`. An empty initial plan needs no Docker service, even when
+checkers are registered for potential follow-up. Docker execution is
 Linux/amd64 through `/var/run/docker.sock`; there is no host execution fallback.
 
 The organizer must replace the examples' `ORGANIZER/MODEL` placeholder with an
@@ -75,7 +76,8 @@ If `.data.decision.kind` is `followup`, transfer artifacts to a fresh,
 credential-free execution job, then review in a separate credentialed job:
 
 ```sh
-# Credential-free execution job:
+# Credential-free execution job (fresh worker):
+llm-verifier prepare-runtime --phase followup --intake .work/intake.json
 llm-verifier followup --intake .work/intake.json --initial .work/initial.json \
   --initial-review .work/review.json --out .work/followup.json
 # Separate credentialed REVIEW job:
@@ -110,15 +112,18 @@ artifacts from the current trusted run may be consumed.
   1–8 objective contract, but awards no artificial score to the lemma.
 - [Computation-backed identity](examples/computation): the same implementation
   checks submitted finite experiments and permits one bounded follow-up batch.
+- [Toy truncated-hash collision](examples/collision): a protected checker verifies
+  the declared pair before numeric scoring; a separate lemma needs no witness.
+  [Checker registry and score gate](docs/checkers.md) explain the exact guarantees.
 - [Configuration and input dialect](docs/configuration.md), with reference
   [config](docs/config.schema.json) and [submission](docs/submission.schema.json)
   schemas. Python validators also enforce cross-field and budget constraints.
 - [Artifact, provider and execution contracts](docs/contracts.md).
 - [Reusable workflow and caller template](docs/workflow.md).
 
-Both example manifests use one-track schema v2. Their `setupCommand` and
+The example manifests use one-track schema v2. Their `setupCommand` and
 `benchmarkCommand` are phase descriptors: intake and finalization. **Local
-`yukon run` is unsupported in v0.1.** Yukon invokes setup immediately before
+`yukon run` is unsupported in v0.2.** Yukon invokes setup immediately before
 benchmark, without a pause for execution/review. Setup creates a new intake
 identity, so precomputing review artifacts does not make `yukon run` work.
 Use the independent `llm-verifier` phases above directly for local evaluation.
@@ -143,7 +148,9 @@ insufficient infrastructure budgets or artifact mismatches exit **2**. The CLI
 clears its requested stage output before work; finalization clears stale score
 and dossier files **before reading any artifact**, and writes the score only
 after complete chain validation. Failed experiments remain explicit evidence;
-they never automatically become acceptance. Missing/failed follow-up stages
+they never automatically become acceptance. When required score checks are
+configured, missing or failed checks forbid every non-null tuple; unscored
+judgments remain subject to `allow_unscored`. Missing/failed follow-up stages
 cannot be finalized.
 
 ## Verification and scope
@@ -153,7 +160,7 @@ PYTHONPATH=src python3 -m unittest discover -v
 # Explicitly prepare the pinned image first; no model calls are involved:
 llm-verifier intake --root examples/computation --out .work/docker-intake.json
 llm-verifier prepare-runtime --intake .work/docker-intake.json
-LLMV_DOCKER_INTEGRATION=1 PYTHONPATH=src python3 -m unittest tests.test_runner.DockerIntegration -v
+LLMV_DOCKER_INTEGRATION=1 PYTHONPATH=src python3 -m unittest tests.test_runner.DockerIntegration tests.test_checks.CheckerDockerIntegration -v
 # If actionlint is installed:
 actionlint .github/workflows/verify.yml
 ```
@@ -161,8 +168,8 @@ actionlint .github/workflows/verify.yml
 The default suite skips the separately gated real Docker tests. See
 [validation record](docs/validation.md) for tests actually run. Scope is Python
 standard-library programs, one initial reviewer plus at most one final reviewer,
-and one optional experiment batch. Sage, Lean, native-language toolchains,
-HashSmash's reviewer committee and trusted-witness machinery, challenge-specific
+and one optional batch of experiments/checks. Sage, Lean, native-language toolchains,
+Full HashSmash support and its reviewer committee, challenge-specific
 admission dialects, formal/benchmark certification, package registry distribution
 and a hosted service are deferred. Public release, hosted deployment and license
 selection remain outside the internal source publication scope.

@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "id": "toy-truncated-collision",
+  "rules_path": "rules.md",
+  "review_standard": "scoped-mathematical-review-v1",
+  "objectives": [
+    {
+      "name": "total_bytes",
+      "direction": "-",
+      "unit": "UTF-8 bytes",
+      "semantics": "Exactly the total_bytes from a passing collision checker result for the submission-declared canonical left/right witness under the protected toy target. Smaller is better. Never score a different judge-selected pair, claim global optimality, or substitute complexity/probability/confidence."
+    }
+  ],
+  "allow_unscored": true,
+  "policies": {
+    "scoring": {
+      "version": "toy-witness-bytes-v1"
+    },
+    "validity": {
+      "version": "scoped-claims-v1"
+    }
+  },
+  "supported_policies": {
+    "scoring": [
+      {
+        "selector": {
+          "version": "toy-witness-bytes-v1"
+        },
+        "instructions": "Numeric scoring requires the collision gate and a legitimate checked canonical pair. Return its exact total_bytes only; no global optimality or statistical/complexity inference. Relevant lemmas may be valid with scores=null."
+      }
+    ],
+    "validity": [
+      {
+        "selector": {
+          "version": "scoped-claims-v1"
+        },
+        "instructions": "Check the exact scope of accepted claims. State assumptions and unresolved obligations. A standalone relevant lemma may be valid without proving the full challenge."
+      }
+    ]
+  },
+  "provider": {
+    "model": "ORGANIZER/MODEL",
+    "response_format": "json_schema"
+  },
+  "limits": {
+    "max_followups": 3
+  },
+  "checkers": [
+    {
+      "id": "collision",
+      "description": "Check distinct UTF-8 messages collide for the protected TOY eight-bit truncated SHA-256 target. Verifies only this concrete pair.",
+      "source": "checkers/collision.py",
+      "files": [
+        "checkers/collision.py",
+        "checkers/target.json"
+      ],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "left": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "right": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "required": [
+          "left",
+          "right"
+        ],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "passed": {
+            "type": "boolean"
+          },
+          "target_bits": {
+            "type": "integer",
+            "minimum": 8,
+            "maximum": 8
+          },
+          "digest_hex": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 2
+          },
+          "total_bytes": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 512
+          }
+        },
+        "required": [
+          "passed",
+          "target_bits",
+          "digest_hex",
+          "total_bytes"
+        ],
+        "additionalProperties": false
+      },
+      "required_for_score": true
+    }
+  ]
+}

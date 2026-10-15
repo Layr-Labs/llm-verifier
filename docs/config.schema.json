@@ -325,6 +325,64 @@
       },
       "required": [],
       "additionalProperties": false
+    },
+    "checkers": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "Protected registry; unique IDs, aggregate source budgets and required boolean passed are enforced by the executable validator. See checkers.md.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+          },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+            }
+          },
+          "input_schema": {
+            "type": "object",
+            "description": "Bounded closed object in the executable restricted JSON Schema dialect; 16 KiB limit."
+          },
+          "output_schema": {
+            "type": "object",
+            "description": "Same bounded closed object dialect; required checkers must require a boolean passed property."
+          },
+          "required_for_score": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "description",
+          "source",
+          "files",
+          "input_schema",
+          "output_schema",
+          "required_for_score"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

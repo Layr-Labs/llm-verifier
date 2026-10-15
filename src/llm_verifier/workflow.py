@@ -12,6 +12,7 @@ from .config import load_config
 from .errors import InfrastructureError, VerifierError
 from .files import directory_fd, outside, relative, write_json
 from .jsonutil import loads, sha
+from .submission import initial_plan
 
 
 def checkout_revision(directory, expected):
@@ -40,7 +41,7 @@ def prepare(args):
     outside(root / score_path, root / submission)
     # The score must not overwrite protected config or rules either.
     effective = load_config(root, args.config, submission, loads(args.evaluation) if args.evaluation else None)
-    if score_path in {args.config, effective["config"]["rules_path"]}:
+    if score_path in {args.config, effective["config"]["rules_path"], *effective["checker_files"]}:
         raise VerifierError("score_path_overwrites_config")
     outside(args.out, root / submission)
     context = {"kind": "github-actions", "candidate_revision": args.candidate_revision,
@@ -65,9 +66,15 @@ def github_output(key, value):
             stream.write(key + "=" + value + "\n")
 
 
-def prepare_runtime(intake, expected=None):
+def prepare_runtime(intake, expected=None, *, phase="initial"):
     data = verify_intake(intake, expected)
-    if not data["manifest"]["experiments"]:
+    if phase not in {"initial", "followup"}:
+        raise VerifierError("runtime_phase")
+    # Follow-up runs on a fresh worker; its conditional job prepares the image
+    # for any declared/registered entrypoint the judge may have requested.
+    needed = initial_plan(data["manifest"]) if phase == "initial" else (
+        data["manifest"]["experiments"] or data["effective"]["config"].get("checkers"))
+    if not needed:
         return
     binary = shutil.which("docker")
     if not binary:

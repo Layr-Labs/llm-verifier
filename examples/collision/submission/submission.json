@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "title": "A concrete collision for a TOY eight-bit target",
+  "claims": [
+    "The declared distinct pair collides under the protected toy target; no full SHA-256 collision or optimality claim."
+  ],
+  "experiments": [],
+  "checks": [
+    {
+      "check": "collision",
+      "inputs": {
+        "left": "m3",
+        "right": "m17"
+      }
+    }
+  ]
+}

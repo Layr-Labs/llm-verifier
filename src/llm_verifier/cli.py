@@ -57,8 +57,9 @@ def parser():
     paths.add_argument("--score-dir", help="Fresh artifact staging directory; use --score-path")
     cmd.add_argument("--score-path", help="Manifest-relative scorePath when using --score-dir")
     cmd.add_argument("--dossier", required=True)
-    cmd = sub.add_parser("prepare-runtime", help="Explicitly pull organizer pinned Docker image; no execution")
+    cmd = sub.add_parser("prepare-runtime", help="Explicitly pull organizer pinned Docker image if this phase needs it; no execution")
     artifacts(cmd)
+    cmd.add_argument("--phase", choices=("initial", "followup"), default="initial")
     cmd = sub.add_parser("workflow-prepare", help="Verify pinned checkouts, paths and workflow context before intake")
     for name in ("checkout", "verifier-checkout", "candidate-revision", "verifier-revision", "root-dir", "config", "submission", "score-path", "out", "run-id"):
         cmd.add_argument("--" + name, required=True)
@@ -96,7 +97,7 @@ def run(args):
     intake = read_json(args.intake)
     verify_intake(intake, args.expected_intake)
     if args.command == "prepare-runtime":
-        prepare_runtime(intake, args.expected_intake)
+        prepare_runtime(intake, args.expected_intake, phase=args.phase)
         return
     initial = read_json(args.initial) if hasattr(args, "initial") else None
     first = read_json(args.initial_review) if hasattr(args, "initial_review") else None

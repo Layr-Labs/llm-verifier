@@ -23,6 +23,7 @@ Required fields:
 | `provider` | Explicit `model`; optional settings below |
 | `limits` | Optional organizer reductions/overrides within hard caps |
 | `runtime` | Optional `{image, platform}`; official Python digest, linux/amd64 |
+| `checkers` | Optional protected registry; see [checks and numeric score gate](checkers.md) |
 
 Selectors are compared as exact canonical JSON, including `null`. There is no
 implicit version upgrade. Both selected policies must be supported even for a
@@ -59,6 +60,10 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
 | Total review seconds / HTTP attempts across both reviews | 180 / 4 | 600 / 6 |
 
+Candidate experiments and organizer checks share all run/time/output budgets.
+The registry source union independently uses the same file/count/byte caps as the
+candidate snapshot; see [checker bundle limits](checkers.md).
+
 Full run slots and both stream capacities are **reserved**, even if a run ends
 quickly or prints little. For example, one initial 20-second run leaves two
 follow-up slots under the default total 60-second budget, despite the follow-up
@@ -89,7 +94,7 @@ otherwise OpenRouter chooses the initial compatible provider. No fallback list i
 sent. Retention flags express routing requests, not an account-wide retention
 guarantee. The organizer controls those flags and must select a compatible model.
 
-`json_schema` sends closed per-entrypoint variants derived from the validated
+`json_schema` sends closed per-entrypoint and per-checker variants derived from the validated
 input schemas. Common native strict providers require every object property to
 be required. An initial review needing request variants with optional properties
 fails **before the HTTP call**; the organizer must explicitly select
@@ -104,8 +109,10 @@ as infrastructure, never fall back to another model or fabricate a judgment.
 
 Every bounded regular UTF-8 file in the submission tree is snapshotted and shown
 to the judge. Files are inert data until a declared Python entrypoint is executed
-inside Docker. `submission.json` has exactly `version: 1`, `title`, `claims`
-(nonempty list of bounded strings), and `experiments` (possibly empty).
+inside Docker. `submission.json` requires `version: 1`, `title`, `claims`
+(nonempty list of bounded strings), and `experiments` (possibly empty). It may
+also declare `checks: [{check, inputs}]`, one payload per registered checker ID;
+see [protected checks](checkers.md). All other fields are rejected.
 Each experiment has exactly:
 
 ```json

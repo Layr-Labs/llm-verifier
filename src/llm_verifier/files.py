@@ -10,7 +10,7 @@ import tempfile
 import tokenize
 
 from .errors import VerifierError
-from .jsonutil import canonical, loads, sha, MAX_ARTIFACT_BYTES
+from .jsonutil import canonical, integer, keys, loads, sha, MAX_ARTIFACT_BYTES
 
 _PART = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
 
@@ -130,6 +130,40 @@ def snapshot(root, limits):
             walk(fd)
     except OSError:
         raise VerifierError("unsafe_submission_tree") from None
+    return files
+
+
+def validate_files(files, limits, *, empty=False):
+    if type(files) is not dict or not (0 if empty else 1) <= len(files) <= limits["max_files"]:
+        raise VerifierError("file_count_limit")
+    total = 0
+    for path, record in files.items():
+        relative(path)
+        keys(record, {"text", "sha256", "size"})
+        if type(record["text"]) is not str:
+            raise VerifierError("source_text_required")
+        data = record["text"].encode("utf-8")
+        integer(record["size"], 0, limits["max_file_bytes"])
+        if sha(data) != record["sha256"] or len(data) != record["size"]:
+            raise VerifierError("source_hash_mismatch")
+        utf8(data, python=path.endswith(".py"))
+        total += len(data)
+    if total > limits["max_submission_bytes"]:
+        raise VerifierError("submission_byte_limit")
+
+
+def snapshot_declared(root, paths, candidate, limits):
+    """Read only explicitly protected files; never walk the challenge root."""
+    files, total = {}, 0
+    if len(paths) > limits["max_files"]:
+        raise VerifierError("file_count_limit")
+    for path in sorted(paths):
+        relative(path)
+        outside(Path(root) / path, candidate)
+        data = read_bytes(Path(root) / path, min(limits["max_file_bytes"], limits["max_submission_bytes"] - total))
+        total += len(data)
+        files[path] = {"text": utf8(data, python=path.endswith(".py")), "sha256": sha(data), "size": len(data)}
+    validate_files(files, limits, empty=True)
     return files
 
 

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "title": "Toy target existence lemma without a witness",
+  "claims": [
+    "Among 257 distinct UTF-8 messages some pair collides for any fixed eight-bit target."
+  ],
+  "experiments": []
+}

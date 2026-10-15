@@ -64,6 +64,29 @@
         ],
         "additionalProperties": false
       }
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 16,
+      "description": "One canonical typed input per registered ID; all declared checks execute initially within shared budgets.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "check": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "inputs": {
+            "type": "object",
+            "description": "Registry input schema and canonical 16 KiB cap validated locally."
+          }
+        },
+        "required": [
+          "check",
+          "inputs"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

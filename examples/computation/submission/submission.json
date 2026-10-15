@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "title": "Sum of squares with finite checks",
+  "claims": [
+    "For each integer n >= 0, sum(k*k for k in 0..n) = n(n+1)(2n+1)/6.",
+    "The declared program checks every n from zero through its input N using an integer recurrence."
+  ],
+  "experiments": [
+    {
+      "id": "prefix",
+      "source": "check.py",
+      "purpose": "Check every prefix of the sum-of-squares identity up to N using exact integer arithmetic.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "n": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          }
+        },
+        "required": [
+          "n"
+        ],
+        "additionalProperties": false
+      },
+      "initial_inputs": [
+        {
+          "n": 10
+        }
+      ]
+    }
+  ]
+}

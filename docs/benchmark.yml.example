@@ -1,0 +1,25 @@
+# TEMPLATE ONLY: replace BOTH SHA placeholders with the same reviewed full commit.
+name: Benchmark
+on:
+  workflow_dispatch:
+    inputs:
+      yukon_evaluation:
+        type: string
+        required: false
+        default: ''
+permissions:
+  contents: read
+jobs:
+  verify:
+    uses: Layr-Labs/llm-verifier/.github/workflows/verify.yml@FULL_40_CHARACTER_COMMIT
+    with:
+      verifier_repository: Layr-Labs/llm-verifier
+      verifier_revision: FULL_40_CHARACTER_COMMIT
+      root_dir: '.' # Or the leaf path used for the Yukon import.
+      config_path: verifier.json
+      submission_path: submission
+      score_path: .yukon/score.json
+      yukon_evaluation: ${{ inputs.yukon_evaluation }}
+    secrets:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      VERIFIER_CHECKOUT_TOKEN: ${{ secrets.VERIFIER_CHECKOUT_TOKEN }}

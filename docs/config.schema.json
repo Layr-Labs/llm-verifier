@@ -1,0 +1,342 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Protected LLM verifier config v1",
+  "description": "Structural reference; llm_verifier.config additionally enforces policy matching, uniqueness and cross-field constraints.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+    },
+    "rules_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+    },
+    "review_standard": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "objectives": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "direction": {
+            "enum": [
+              "+",
+              "-"
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "semantics": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "name",
+          "direction",
+          "unit",
+          "semantics"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "allow_unscored": {
+      "type": "boolean"
+    },
+    "policies": {
+      "type": "object",
+      "properties": {
+        "scoring": {},
+        "validity": {}
+      },
+      "required": [
+        "scoring",
+        "validity"
+      ],
+      "additionalProperties": false
+    },
+    "supported_policies": {
+      "type": "object",
+      "properties": {
+        "scoring": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "selector": {},
+              "instructions": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              }
+            },
+            "required": [
+              "selector",
+              "instructions"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "validity": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "properties": {
+              "selector": {},
+              "instructions": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              }
+            },
+            "required": [
+              "selector",
+              "instructions"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "scoring",
+        "validity"
+      ],
+      "additionalProperties": false
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.:-]+$"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 32768,
+          "default": 8192
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 180,
+          "default": 60
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 2
+        },
+        "max_response_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576,
+          "default": 262144
+        },
+        "response_format": {
+          "enum": [
+            "json_schema",
+            "json_object"
+          ],
+          "default": "json_schema"
+        },
+        "zdr": {
+          "type": "boolean",
+          "default": true
+        },
+        "data_collection": {
+          "enum": [
+            "allow",
+            "deny"
+          ],
+          "default": "deny"
+        },
+        "upstream": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 100,
+          "default": null
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "pattern": "^(docker\\.io/library/)?python:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}$"
+        },
+        "platform": {
+          "const": "linux/amd64"
+        }
+      },
+      "required": [
+        "image",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_files": {
+          "type": "integer",
+          "default": 32,
+          "minimum": 1,
+          "maximum": 128
+        },
+        "max_file_bytes": {
+          "type": "integer",
+          "default": 65536,
+          "minimum": 1,
+          "maximum": 262144
+        },
+        "max_submission_bytes": {
+          "type": "integer",
+          "default": 262144,
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "max_initial_runs": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 12
+        },
+        "max_followups": {
+          "type": "integer",
+          "default": 3,
+          "minimum": 0,
+          "maximum": 8
+        },
+        "run_seconds": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 120
+        },
+        "initial_seconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 600
+        },
+        "followup_seconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 600
+        },
+        "total_seconds": {
+          "type": "integer",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 600
+        },
+        "stdout_bytes": {
+          "type": "integer",
+          "default": 65536,
+          "minimum": 64,
+          "maximum": 262144
+        },
+        "stderr_bytes": {
+          "type": "integer",
+          "default": 65536,
+          "minimum": 64,
+          "maximum": 262144
+        },
+        "total_output_bytes": {
+          "type": "integer",
+          "default": 393216,
+          "minimum": 128,
+          "maximum": 4194304
+        },
+        "memory_mb": {
+          "type": "integer",
+          "default": 256,
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "cpus": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 4
+        },
+        "pids": {
+          "type": "integer",
+          "default": 32,
+          "minimum": 8,
+          "maximum": 128
+        },
+        "tmpfs_mb": {
+          "type": "integer",
+          "default": 16,
+          "minimum": 1,
+          "maximum": 64
+        },
+        "max_prompt_bytes": {
+          "type": "integer",
+          "default": 2097152,
+          "minimum": 1024,
+          "maximum": 8388608
+        },
+        "total_review_seconds": {
+          "type": "integer",
+          "default": 180,
+          "minimum": 1,
+          "maximum": 600
+        },
+        "total_provider_requests": {
+          "type": "integer",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "id",
+    "rules_path",
+    "review_standard",
+    "objectives",
+    "allow_unscored",
+    "policies",
+    "supported_policies",
+    "provider"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "sum-squares",
+  "rules_path": "rules.md",
+  "review_standard": "scoped-mathematical-review-v1",
+  "objectives": [
+    {
+      "name": "checked_n",
+      "direction": "+",
+      "unit": "integer N",
+      "semantics": "Largest N for which a completed submitted experiment checks every integer n from 0 through N against the sum-of-squares identity. Check loop coverage and correctness from full source and mathematical reasoning; this is evidence at finite scope, not a certified benchmark or speed score."
+    }
+  ],
+  "allow_unscored": false,
+  "policies": {
+    "scoring": {
+      "version": "finite-prefix-v1"
+    },
+    "validity": {
+      "version": "scoped-claims-v1"
+    }
+  },
+  "supported_policies": {
+    "scoring": [
+      {
+        "selector": {
+          "version": "finite-prefix-v1"
+        },
+        "instructions": "A score requires legitimate source-reviewed complete finite coverage with a successful result. Return one score: largest evidenced N. Never infer larger coverage or performance from claims, wall time, model confidence, or extrapolation."
+      }
+    ],
+    "validity": [
+      {
+        "selector": {
+          "version": "scoped-claims-v1"
+        },
+        "instructions": "Check the exact scope of accepted claims. State assumptions and unresolved obligations. A standalone relevant lemma may be valid without proving the full challenge."
+      }
+    ]
+  },
+  "provider": {
+    "model": "ORGANIZER/MODEL",
+    "response_format": "json_schema"
+  },
+  "limits": {
+    "max_followups": 3
+  }
+}

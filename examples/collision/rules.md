@@ -7,7 +7,7 @@ Only the organizer collision checker establishes this concrete pair's predicate.
 
 For numeric scoring the single submission-declared canonical pair must pass.
 The only objective is the checker's total_bytes for that exact passing pair.
-The judge must bind its tuple to that result and reject conflicting score claims.
+Accept the exact binding for this witness; the verifier derives the score.
 Different pairs tried in follow-up cannot replace the declared witness.
 A pass does not establish search complexity, success probability, global
 optimality, or a collision in full SHA-256. Review such claims separately.

@@ -8,7 +8,11 @@
       "name": "total_bytes",
       "direction": "-",
       "unit": "UTF-8 bytes",
-      "semantics": "Exactly the total_bytes from a passing collision checker result for the submission-declared canonical left/right witness under the protected toy target. Smaller is better. Never score a different judge-selected pair, claim global optimality, or substitute complexity/probability/confidence."
+      "semantics": "Exactly the total_bytes from a passing collision checker result for the submission-declared canonical left/right witness under the protected toy target. Smaller is better. Never score a different judge-selected pair, claim global optimality, or substitute complexity/probability/confidence.",
+      "score_source": {
+        "check": "collision",
+        "field": "total_bytes"
+      }
     }
   ],
   "allow_unscored": true,
@@ -26,7 +30,7 @@
         "selector": {
           "version": "toy-witness-bytes-v1"
         },
-        "instructions": "Numeric scoring requires the collision gate and a legitimate checked canonical pair. Return its exact total_bytes only; no global optimality or statistical/complexity inference. Relevant lemmas may be valid with scores=null."
+        "instructions": "Accept the exact canonical collision binding only after verifying its scoped claim. The verifier derives total_bytes; relevant lemmas remain unscored."
       }
     ],
     "validity": [

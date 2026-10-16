@@ -176,10 +176,14 @@ class OpenAI:
         response_format = {"type": config["response_format"]}
         if config["response_format"] == "json_schema":
             response_format["json_schema"] = {"name": "llm_verifier_decision_v1", "strict": True, "schema": schema}
-        body = canonical({"model": config["model"], "messages": messages,
-                          "max_completion_tokens": config["max_completion_tokens"],
-                          "stream": False, "n": 1, "store": False,
-                          "response_format": response_format})
+        request = {"model": config["model"], "messages": messages,
+                   "max_completion_tokens": config["max_completion_tokens"],
+                   "stream": False, "n": 1, "store": False,
+                   "response_format": response_format}
+        # Omission preserves historical request bytes and provider defaults.
+        if "reasoning_effort" in config:
+            request["reasoning_effort"] = config["reasoning_effort"]
+        body = canonical(request)
         started = time.monotonic()
         attempts = min(requests, config["max_attempts"])
         for attempt in range(1, attempts + 1):

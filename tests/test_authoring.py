@@ -20,6 +20,7 @@ class Authoring(unittest.TestCase):
             scaffold.initialize(root, 'new-challenge', 'test-model')
             self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]), 6)
             self.assertEqual(read_json(root/'verifier.json')['provider']['model'], 'test-model')
+            self.assertNotIn('reasoning_effort', read_json(root/'verifier.json')['provider'])
             (root/'rules.md').write_text('A revised challenge specification.')
             (root/'.venv').mkdir(); (root/'.venv/cache').write_text('irrelevant')
             (root/'notes.md').write_text('Author notes')

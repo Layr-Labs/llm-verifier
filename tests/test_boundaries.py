@@ -11,8 +11,8 @@ from llm_verifier.config import load_config, normalize
 from llm_verifier.errors import VerifierError
 from llm_verifier.files import read_bytes, read_json, relative, snapshot, write_json
 from llm_verifier.input_schema import validate_schema, validate_value
-from llm_verifier.jsonutil import loads
-from tests.support import example
+from llm_verifier.jsonutil import canonical, digest, loads
+from tests.support import REPO, example
 
 
 class Boundaries(unittest.TestCase):
@@ -129,3 +129,42 @@ class Boundaries(unittest.TestCase):
             for value in (None, [], {}, 'text'):
                 config = copy.deepcopy(effective['config']); config['provider']['response_format'] = value
                 with self.subTest(value=value), self.assertRaisesRegex(VerifierError, 'provider_settings'): normalize(config)
+
+
+    def test_reasoning_effort_is_optional_and_exact(self):
+        values = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
+        schema = read_json(REPO/'docs/config.schema.json')['properties']['provider']
+        self.assertNotIn('reasoning_effort', schema['required'])
+        self.assertEqual(schema['properties']['reasoning_effort'], {'type':'string', 'enum':list(values)})
+        with example() as (_, effective, _):
+            for value in values:
+                with self.subTest(value=value):
+                    raw = copy.deepcopy(effective['config'])
+                    raw['provider']['reasoning_effort'] = value
+                    before = canonical(raw)
+                    normalized = normalize(raw)
+                    self.assertEqual(canonical(normalized), before)
+                    self.assertEqual(canonical(raw), before)
+                    self.assertEqual(normalized['provider']['reasoning_effort'], value)
+            for value in (None, True, False, 0, 1, 1.0, [], ['high'], {}, {'effort':'high'},
+                          '', 'HIGH', 'High', ' high', 'high ', 'high\n', 'auto', 'default',
+                          'maximum', 'ultra', 'high,low'):
+                with self.subTest(value=value):
+                    raw = copy.deepcopy(effective['config'])
+                    raw['provider']['reasoning_effort'] = value
+                    with self.assertRaisesRegex(VerifierError, '^provider_settings$'):
+                        normalize(raw)
+
+    def test_omitted_effort_preserves_normalized_config_bytes(self):
+        # Captured at 63530cff8266939c4383599ffd8bb2c7ffbc97e0, before effort support.
+        with example() as (_, effective, _):
+            raw = copy.deepcopy(effective['config'])
+            raw['provider'] = {'model':'test-model'}
+            normalized = normalize(raw)
+            self.assertEqual(canonical(normalized['provider']),
+                b'{"max_attempts":2,"max_completion_tokens":8192,"max_response_bytes":262144,'
+                b'"model":"test-model","response_format":"json_schema","timeout_seconds":60}')
+            self.assertNotIn('reasoning_effort', normalized['provider'])
+            self.assertEqual(digest(normalized),
+                'a681f16d4b398f596a0dfcb1fa90d69fcf5bfa52397ca154b1253da8485c3190')
+            self.assertEqual(canonical(normalize(normalized)), canonical(normalized))

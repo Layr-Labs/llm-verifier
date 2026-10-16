@@ -98,6 +98,21 @@ reject it before a network call.
 Defaults: `max_completion_tokens: 8192`, `timeout_seconds: 60`, `max_attempts: 2`,
 `max_response_bytes: 262144`, `response_format: "json_schema"`. The completion token
 cap includes visible output and reasoning tokens; it is not an input-token cap.
+
+Optional `provider.reasoning_effort` accepts exactly `"none"`, `"minimal"`,
+`"low"`, `"medium"`, `"high"`, `"xhigh"` or `"max"`; null and non-string values
+are rejected. When present it is sent unchanged as the top-level Chat Completions
+`reasoning_effort` field and bound by the existing provider-config hash. When
+omitted, no field or local default is added to the normalized config or request,
+preserving their previous bytes. Supported efforts depend on the selected model;
+qualify that model/effort pair. Unsupported requests fail as infrastructure with
+no effort fallback or downgrade. [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
+and [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) support
+`low`, `medium`, `high`, `xhigh` and `max`, but not `none` or `minimal`.
+CircuitBreaker must explicitly configure `"model": "gpt-6-astra"` and
+`"reasoning_effort": "high"`; omission does not guarantee high effort. The generic
+starter selects neither a model nor an effort default.
+
 See the [OpenAI request reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
 and the local reference schema for bounds. Each request sends `n: 1`,
 `stream: false`, and `store: false`. It sends no tools, sampling overrides, routing

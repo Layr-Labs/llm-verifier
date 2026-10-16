@@ -20,5 +20,5 @@ jobs:
       score_path: .yukon/score.json
       yukon_evaluation: ${{ inputs.yukon_evaluation }}
     secrets:
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       VERIFIER_CHECKOUT_TOKEN: ${{ secrets.VERIFIER_CHECKOUT_TOKEN }}

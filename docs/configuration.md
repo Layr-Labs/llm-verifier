@@ -81,27 +81,47 @@ bounded at 16 MiB; JSON nesting is at most 32 and traversal is bounded.
 
 ## Provider configuration
 
-OpenRouter Chat Completions is the only production adapter, at the fixed API
-endpoint. There is no automatic model or endpoint fallback. Required `model` is
-an explicit `organization/model` identifier; sample placeholders must be replaced.
-Defaults: `max_tokens: 8192`, `timeout_seconds: 60`, `max_attempts: 2`,
-`max_response_bytes: 262144`, `response_format: "json_schema"`, `zdr: true`,
-`data_collection: "deny"`, `upstream: null`. See the reference schema for caps.
+Direct OpenAI Chat Completions is the only production adapter, at the fixed
+`https://api.openai.com/v1/chat/completions` endpoint. The review process reads
+`OPENAI_API_KEY` from its environment; no key or endpoint override is accepted in
+configuration or CLI arguments. Required `model` is an explicit native OpenAI
+model ID, without an `openai/` prefix. No model is chosen by default. Select and
+qualify a model with access to Chat Completions, `max_completion_tokens`, and the
+chosen response format. A dated model ID can pin the organizer's selected snapshot;
+configured and returned IDs are recorded separately because aliases may resolve to
+snapshots. Native fine-tuned IDs with colons are accepted syntactically, but their
+schema capabilities still need qualification. `auto`, `default`, lists and
+provider-prefixed IDs are rejected. The examples' `SELECT_OPENAI_MODEL` placeholder
+is accepted for offline validation/simulation only; `init` and production review
+reject it before a network call.
 
-Routing always sets `allow_fallbacks: false` and `require_parameters: true`.
-Optional `upstream` restricts routing to that single OpenRouter provider slug;
-otherwise OpenRouter chooses the initial compatible provider. No fallback list is
-sent. Retention flags express routing requests, not an account-wide retention
-guarantee. The organizer controls those flags and must select a compatible model.
+Defaults: `max_completion_tokens: 8192`, `timeout_seconds: 60`, `max_attempts: 2`,
+`max_response_bytes: 262144`, `response_format: "json_schema"`. The completion token
+cap includes visible output and reasoning tokens; it is not an input-token cap.
+See the [OpenAI request reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
+and the local reference schema for bounds. Each request sends `n: 1`,
+`stream: false`, and `store: false`. It sends no tools, sampling overrides, routing
+policy or attribution headers. `store: false` disables stored completions; it does
+not establish an account-level zero-retention guarantee or disable abuse monitoring.
+Organizers manage those controls with OpenAI separately; see
+[OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data).
+
+To migrate an older OpenRouter configuration, select the intended OpenAI model's
+native ID, rename `max_tokens` to `max_completion_tokens`, and remove `upstream`,
+`zdr` and `data_collection`. Those old fields are rejected, never silently ignored.
+Provision `OPENAI_API_KEY` in the caller and refresh both verifier pins and the
+caller workflow with `llm-verifier github`. Old credentials are not reused. Restart
+intake under the new implementation; existing phase artifacts are source-bound.
 
 `json_schema` sends closed per-entrypoint and per-checker variants derived from the validated
-input schemas. Common native strict providers require every object property to
-be required. An initial review needing request variants with optional properties
+input schemas. [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+requires every object property to be required and every object to be closed. An
+initial review needing request variants with optional properties
 fails **before the HTTP call**; the organizer must explicitly select
 `response_format: "json_object"` for those declarations. The latter includes the
 same full schema in review material and applies identical local validation.
 There is no silent downgrade, response repair or repeated semantic prompting.
-Final/disabled-follow-up schemas omit all unused request variants. Provider
+Final/disabled-follow-up schemas omit all unused request variants. Model
 support for particular schema keywords still varies; unsupported requests fail
 as infrastructure, never fall back to another model or fabricate a judgment.
 

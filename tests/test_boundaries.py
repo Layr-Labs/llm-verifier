@@ -108,3 +108,24 @@ class Boundaries(unittest.TestCase):
             root=Path(tmp);(root/'outside').mkdir();(root/'alias').symlink_to(root/'outside',target_is_directory=True)
             with self.assertRaises(VerifierError):write_json(root/'alias/new/file.json',{})
             self.assertFalse((root/'outside/new').exists())
+
+
+    def test_openai_models_and_closed_provider_settings(self):
+        with example() as (_, effective, _):
+            for model in ('gpt-4.1', 'gpt-4.1-2025-04-14', 'o3', 'ft:gpt-4.1:org:custom:id'):
+                config = copy.deepcopy(effective['config']); config['provider']['model'] = model
+                self.assertEqual(normalize(config)['provider']['model'], model)
+            for model in ('openai/gpt-4.1', 'auto', 'Auto', 'default', 'DEFAULT', '', 'x'*201, 'x\n', ['gpt-4.1'], None):
+                config = copy.deepcopy(effective['config']); config['provider']['model'] = model
+                with self.subTest(model=model), self.assertRaisesRegex(VerifierError, 'explicit_provider_model_required'):
+                    normalize(config)
+            for field, value in (('max_tokens',8192), ('upstream',None), ('zdr',True), ('data_collection','deny'),
+                                 ('endpoint','https://invalid.example'), ('api_key','test-only')):
+                config = copy.deepcopy(effective['config']); config['provider'][field] = value
+                with self.subTest(field=field), self.assertRaises(VerifierError): normalize(config)
+            for value in (127, 32769, True, 8192.0):
+                config = copy.deepcopy(effective['config']); config['provider']['max_completion_tokens'] = value
+                with self.subTest(value=value), self.assertRaises(VerifierError): normalize(config)
+            for value in (None, [], {}, 'text'):
+                config = copy.deepcopy(effective['config']); config['provider']['response_format'] = value
+                with self.subTest(value=value), self.assertRaisesRegex(VerifierError, 'provider_settings'): normalize(config)

@@ -27,9 +27,8 @@ LIMITS = {
     "max_prompt_bytes": (2097152, 1024, 8388608),
     "total_review_seconds": (180, 1, 600), "total_provider_requests": (4, 1, 6),
 }
-PROVIDER_DEFAULTS = {"max_tokens": 8192, "timeout_seconds": 60, "max_attempts": 2,
-                     "max_response_bytes": 262144, "response_format": "json_schema",
-                     "zdr": True, "data_collection": "deny", "upstream": None}
+PROVIDER_DEFAULTS = {"max_completion_tokens": 8192, "timeout_seconds": 60, "max_attempts": 2,
+                     "max_response_bytes": 262144, "response_format": "json_schema"}
 
 
 def identifier(value):
@@ -122,16 +121,16 @@ def normalize(raw):
     keys(raw["provider"], {"model"}, set(PROVIDER_DEFAULTS))
     provider = {**PROVIDER_DEFAULTS, **raw["provider"]}
     # No fallback aliases, list of models or implicitly selected user defaults.
-    if type(provider["model"]) is not str or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.:-]+", provider["model"]):
+    if (type(provider["model"]) is not str
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}", provider["model"])
+            or provider["model"].lower() in {"auto", "default"}):
         raise VerifierError("explicit_provider_model_required")
-    integer(provider["max_tokens"], 128, 32768)
+    integer(provider["max_completion_tokens"], 128, 32768)
     integer(provider["timeout_seconds"], 1, 180)
     integer(provider["max_attempts"], 1, 3)
     integer(provider["max_response_bytes"], 1024, 1048576)
-    if provider["response_format"] not in {"json_schema", "json_object"} or type(provider["zdr"]) is not bool or provider["data_collection"] not in {"allow", "deny"}:
+    if provider["response_format"] not in ("json_schema", "json_object"):
         raise VerifierError("provider_settings")
-    if provider["upstream"] is not None:
-        text(provider["upstream"], 100)
     return loads(canonical({**raw, "limits": limits, "runtime": runtime, "provider": provider}))
 
 

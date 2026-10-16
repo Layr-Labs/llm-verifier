@@ -1,4 +1,4 @@
-"""Bounded OpenRouter adapter. Transport failures never become judgments."""
+"""Bounded OpenAI adapter. Transport failures never become judgments."""
 
 from dataclasses import dataclass
 import http.client
@@ -12,7 +12,7 @@ import time
 from .errors import InfrastructureError, VerifierError
 from .jsonutil import canonical, digest, loads
 
-ENDPOINT = "https://openrouter.ai/api/v1/chat/completions"
+ENDPOINT = "https://api.openai.com/v1/chat/completions"
 
 
 @dataclass
@@ -26,10 +26,10 @@ class HttpTransport:
         # http.client does not automatically follow redirects (unlike urlopen).
         # Each read updates the socket timeout to the remaining wall budget.
         deadline = time.monotonic() + timeout
-        conn = http.client.HTTPSConnection("openrouter.ai", timeout=timeout)
+        conn = http.client.HTTPSConnection("api.openai.com", timeout=timeout)
         response = None
         try:
-            conn.request("POST", "/api/v1/chat/completions", body=body,
+            conn.request("POST", "/v1/chat/completions", body=body,
                          headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json",
                                   "Accept": "application/json", "User-Agent": "llm-verifier/0.1"})
             response = conn.getresponse()
@@ -114,7 +114,7 @@ def _http_worker():
 
 
 def _safe_identifier(value):
-    if type(value) is not str or not re.fullmatch(r"[A-Za-z0-9_./:@-]{1,200}", value):
+    if type(value) is not str or not re.fullmatch(r"[A-Za-z0-9_.:-]{1,200}", value):
         raise InfrastructureError("provider_metadata_invalid")
     return value
 
@@ -122,7 +122,7 @@ def _safe_identifier(value):
 def parse_response(response, configured_model):
     try:
         payload = loads(response.body)
-        if type(payload) is not dict or payload.get("error") is not None:
+        if type(payload) is not dict or payload.get("object") != "chat.completion" or payload.get("error") is not None:
             raise VerifierError("provider_envelope")
         choices = payload["choices"]
         if type(choices) is not list or len(choices) != 1:
@@ -131,7 +131,7 @@ def parse_response(response, configured_model):
         if type(choice) is not dict or choice.get("finish_reason") != "stop" or choice.get("error") is not None:
             raise VerifierError("unfinished_response")
         message = choice["message"]
-        if type(message) is not dict or message.get("role") != "assistant" or message.get("tool_calls") or message.get("function_call") or message.get("refusal"):
+        if type(message) is not dict or message.get("role") != "assistant" or message.get("tool_calls") or message.get("function_call") or message.get("refusal") is not None:
             raise VerifierError("refusal_or_tool_response")
         if type(message.get("content")) is not str:
             raise VerifierError("text_response_required")
@@ -155,15 +155,17 @@ def parse_response(response, configured_model):
         raise InfrastructureError("provider_response_invalid") from None
 
 
-class OpenRouter:
+class OpenAI:
     simulation = False
 
     def __init__(self, config, *, transport=None, api_key=None, sleeper=time.sleep):
         self.config = config
         # Dependency injection is for trusted library tests only. The CLI reads
         # exactly this environment variable and never takes a key in argv/config.
-        self._key = api_key if api_key is not None else os.environ.get("OPENROUTER_API_KEY", "")
-        if not self._key or "\n" in self._key or "\r" in self._key:
+        if config["model"] == "SELECT_OPENAI_MODEL":
+            raise InfrastructureError("explicit_provider_model_required")
+        self._key = api_key if api_key is not None else os.environ.get("OPENAI_API_KEY", "")
+        if type(self._key) is not str or not self._key or any(not 33 <= ord(char) <= 126 for char in self._key):
             raise InfrastructureError("provider_credential_missing")
         self.transport = transport or HttpTransport()
         self.simulation = transport is not None
@@ -171,16 +173,13 @@ class OpenRouter:
 
     def review(self, messages, schema, seconds, requests):
         config = self.config
-        route = {"allow_fallbacks": False, "require_parameters": True,
-                 "data_collection": config["data_collection"], "zdr": config["zdr"]}
-        if config["upstream"] is not None:
-            route["only"] = [config["upstream"]]
         response_format = {"type": config["response_format"]}
         if config["response_format"] == "json_schema":
             response_format["json_schema"] = {"name": "llm_verifier_decision_v1", "strict": True, "schema": schema}
         body = canonical({"model": config["model"], "messages": messages,
-                          "max_tokens": config["max_tokens"], "stream": False,
-                          "response_format": response_format, "provider": route})
+                          "max_completion_tokens": config["max_completion_tokens"],
+                          "stream": False, "n": 1, "store": False,
+                          "response_format": response_format})
         started = time.monotonic()
         attempts = min(requests, config["max_attempts"])
         for attempt in range(1, attempts + 1):
@@ -201,10 +200,10 @@ class OpenRouter:
                     elapsed = time.monotonic() - started
                     if elapsed > seconds:
                         raise InfrastructureError("provider_time_budget")
-                    metadata.update(provider="openrouter", endpoint=ENDPOINT,
+                    metadata.update(provider="openai", endpoint=ENDPOINT,
                                     prompt_sha256=digest(messages), schema_sha256=digest(schema),
                                     provider_config_sha256=digest(config), attempts=attempt,
-                                    elapsed_seconds=elapsed, routing=route)
+                                    elapsed_seconds=elapsed)
                     return decision, metadata
                 if response.status != 429 and not 500 <= response.status <= 599:
                     raise InfrastructureError("provider_http_failed")

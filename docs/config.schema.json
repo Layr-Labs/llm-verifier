@@ -172,9 +172,12 @@
       "properties": {
         "model": {
           "type": "string",
-          "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.:-]+$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "not": {
+            "pattern": "^(?:[Aa][Uu][Tt][Oo]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt])$"
+          }
         },
-        "max_tokens": {
+        "max_completion_tokens": {
           "type": "integer",
           "minimum": 128,
           "maximum": 32768,
@@ -204,25 +207,6 @@
             "json_object"
           ],
           "default": "json_schema"
-        },
-        "zdr": {
-          "type": "boolean",
-          "default": true
-        },
-        "data_collection": {
-          "enum": [
-            "allow",
-            "deny"
-          ],
-          "default": "deny"
-        },
-        "upstream": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "maxLength": 100,
-          "default": null
         }
       },
       "required": [

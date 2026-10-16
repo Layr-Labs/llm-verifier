@@ -12,10 +12,10 @@ from llm_verifier.files import read_json, write_json
 from llm_verifier.judgment import validate_judgment, yukon
 from llm_verifier.jsonutil import canonical
 from llm_verifier import pipeline
-from llm_verifier.provider import HttpTransport
+from llm_verifier.provider import HttpTransport, OpenAI
 from llm_verifier.runner import DockerRunner, output_record
 from llm_verifier.simulation import simulate
-from tests.support import example, direct, reseal, scripted_model
+from tests.support import example, direct, reseal, scripted_model, completion
 
 
 class Contracts(unittest.TestCase):
@@ -236,3 +236,26 @@ class Contracts(unittest.TestCase):
             judgment=read_json(root/'simulation.json')['initial_decision']['judgment']
             validate_judgment({**judgment,'reason':'😀'*2000,'scores':[1.7976931348623157e308]},effective['config'],['source:proof.md'])
             with self.assertRaisesRegex(VerifierError,'yukon_reason_length'):validate_judgment({**judgment,'reason':'😀'*2001},effective['config'],['source:proof.md'])
+
+
+    def test_production_review_rejects_old_provider_and_wrong_endpoint_provenance(self):
+        with example() as (root, _, intake):
+            initial, first = direct(root, intake)
+            for field, value in (('provider','openrouter'), ('endpoint','https://invalid.example')):
+                changed = copy.deepcopy(first)
+                changed['data']['provenance'][field] = value
+                with self.subTest(field=field), self.assertRaisesRegex(VerifierError, 'untrusted_provider_provenance'):
+                    pipeline.verify_initial_review(intake, initial, reseal(changed))
+
+    def test_injected_openai_transport_remains_nonpublishable(self):
+        with example() as (root, effective, intake):
+            initial = pipeline.execute(intake)
+            decision = read_json(root/'simulation.json')['initial_decision']
+            from unittest.mock import Mock
+            transport = Mock(); transport.request.return_value = completion(decision)
+            first = pipeline.review(intake, initial, provider=OpenAI(
+                effective['config']['provider'], transport=transport, api_key='test-key'))
+            self.assertTrue(first['simulation'])
+            with self.assertRaisesRegex(VerifierError, 'simulation_cannot_publish'):
+                pipeline.finalize(intake, initial, first, root/'score.json', root/'dossier.json')
+            self.assertFalse((root/'score.json').exists())

@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 from llm_verifier.errors import InfrastructureError, VerifierError
 from llm_verifier.jsonutil import canonical, loads
-from llm_verifier.provider import HttpResponse, HttpTransport, OpenRouter, parse_response
+from llm_verifier.provider import ENDPOINT, HttpResponse, HttpTransport, OpenAI, parse_response
 from tests.support import completion, example
 
 
@@ -14,23 +14,24 @@ class Provider(unittest.TestCase):
     def test_truncation_refusal_tools_ambiguous_and_malformed(self):
         baseline=loads(completion({'kind':'judgment'}).body)
         variants=[]
-        for reason in ('length','tool_calls','content_filter',None):
+        for reason in ('length','tool_calls','function_call','content_filter','unknown',None):
             data=copy.deepcopy(baseline);data['choices'][0]['finish_reason']=reason;variants.append(data)
-        for field,value in [('refusal','No'),('tool_calls',[{'id':'x'}]),('function_call',{'name':'f'}),('role','user'),('content','```json\n{}\n```'),('content','{"x":1,"x":2}'),('content','NaN'),('content','{"n":1e999}')]:
+        for field,value in [('refusal','No'),('refusal',''),('refusal',False),('content',None),('content',[]),('tool_calls',[{'id':'x'}]),('function_call',{'name':'f'}),('role','user'),('content','```json\n{}\n```'),('content','{"x":1,"x":2}'),('content','NaN'),('content','{"n":1e999}')]:
             data=copy.deepcopy(baseline);data['choices'][0]['message'][field]=value;variants.append(data)
         data=copy.deepcopy(baseline);data['choices']*=2;variants.append(data)
+        data=copy.deepcopy(baseline);data['object']='chat.completion.chunk';variants.append(data)
         data=copy.deepcopy(baseline);data['error']={'message':'SECRET'};variants.append(data)
         data=copy.deepcopy(baseline);data['choices'][0]['error']={'message':'SECRET'};variants.append(data)
         for payload in variants:
             with self.subTest(payload=payload),self.assertRaisesRegex(InfrastructureError,'provider_response_invalid'):
-                parse_response(HttpResponse(200,canonical(payload)),'organizer/model')
+                parse_response(HttpResponse(200,canonical(payload)),'test-model')
 
     def test_transport_error_retry_limits_and_redaction(self):
         with example() as (_,effective,_):
             config=effective['config']['provider']
             for side in ([RuntimeError('Authorization: SUPER-SECRET')]*2,[HttpResponse(500,b'SUPER-SECRET')]*2,[HttpResponse(401,b'SUPER-SECRET')]):
                 transport=Mock();transport.request.side_effect=side
-                provider=OpenRouter(config,transport=transport,api_key='SUPER-SECRET',sleeper=lambda _:None)
+                provider=OpenAI(config,transport=transport,api_key='SUPER-SECRET',sleeper=lambda _:None)
                 with self.assertRaises(InfrastructureError) as error:provider.review([],{},100,4)
                 self.assertNotIn('SUPER-SECRET',str(error.exception))
                 self.assertEqual(transport.request.call_count,len(side))
@@ -39,30 +40,34 @@ class Provider(unittest.TestCase):
         with example() as (_,effective,_):
             decision={'kind':'judgment','judgment':{'valid':False},'requests':[]}
             transport=Mock();transport.request.return_value=completion(decision)
-            provider=OpenRouter(effective['config']['provider'],transport=transport,api_key='dummy')
+            provider=OpenAI(effective['config']['provider'],transport=transport,api_key='dummy')
             got,provenance=provider.review([{'role':'system','content':'rules'}],{},100,4)
             self.assertEqual(got,decision)
             self.assertEqual(transport.request.call_count,1)
             self.assertEqual(provenance['usage']['total_tokens'],150)
             request=loads(transport.request.call_args.args[0])
-            self.assertEqual(request['model'],'ORGANIZER/MODEL')
-            self.assertFalse(request['provider']['allow_fallbacks'])
-            self.assertEqual(request['provider']['data_collection'],'deny')
-            self.assertTrue(request['provider']['zdr'])
+            self.assertEqual(request['model'],'test-model')
+            self.assertEqual(request, {'model':'test-model', 'messages':[{'role':'system','content':'rules'}],
+                'max_completion_tokens':8192, 'stream':False, 'n':1, 'store':False,
+                'response_format':{'type':'json_schema','json_schema':{
+                    'name':'llm_verifier_decision_v1','strict':True,'schema':{}}}})
+            self.assertEqual(provenance['provider'],'openai')
+            self.assertEqual(provenance['endpoint'],ENDPOINT)
+            self.assertNotIn('routing',provenance)
             self.assertNotIn('dummy',str(provenance))
             self.assertTrue(provider.simulation)
 
     def test_malformed_success_no_semantic_repair_retry(self):
         with example() as (_,effective,_):
             transport=Mock();transport.request.return_value=HttpResponse(200,b'not JSON')
-            provider=OpenRouter(effective['config']['provider'],transport=transport,api_key='dummy')
+            provider=OpenAI(effective['config']['provider'],transport=transport,api_key='dummy')
             with self.assertRaises(InfrastructureError):provider.review([],{},100,4)
             self.assertEqual(transport.request.call_count,1)
 
     def test_bounded_response_requests_and_wall_deadline(self):
         with example() as (_,effective,_):
             transport=Mock();transport.request.return_value=HttpResponse(200,b'x'*300000)
-            provider=OpenRouter(effective['config']['provider'],transport=transport,api_key='dummy')
+            provider=OpenAI(effective['config']['provider'],transport=transport,api_key='dummy')
             with self.assertRaisesRegex(InfrastructureError,'response_limit'):provider.review([],{},100,4)
             transport.reset_mock()
             with self.assertRaisesRegex(InfrastructureError,'attempt_budget'):provider.review([],{},100,0)
@@ -73,9 +78,13 @@ class Provider(unittest.TestCase):
     def test_real_http_reader_drops_errors_no_redirect_and_bounds_reads(self):
         conn=Mock();response=Mock();conn.getresponse.return_value=response
         response.status=302
-        with patch('http.client.HTTPSConnection',return_value=conn):
+        with patch('http.client.HTTPSConnection',return_value=conn) as connect:
             got=HttpTransport()._request_in_child(b'{}','KEY',1,32)
         self.assertEqual(got,HttpResponse(302,b''))
+        connect.assert_called_once_with('api.openai.com',timeout=1)
+        conn.request.assert_called_once_with('POST','/v1/chat/completions',body=b'{}',headers={
+            'Authorization':'Bearer KEY','Content-Type':'application/json',
+            'Accept':'application/json','User-Agent':'llm-verifier/0.1'})
         response.read1.assert_not_called()
         response.status=200;response.read1.side_effect=[b'a'*33]
         with patch('http.client.HTTPSConnection',return_value=conn),self.assertRaises(InfrastructureError):
@@ -83,10 +92,10 @@ class Provider(unittest.TestCase):
         conn.close.assert_called()
 
     def test_missing_credential_and_arbitrary_metadata(self):
-        with example() as (_,effective,_),patch.dict('os.environ',{'OPENROUTER_API_KEY':''}):
-            with self.assertRaisesRegex(InfrastructureError,'credential_missing'):OpenRouter(effective['config']['provider'])
+        with example() as (_,effective,_),patch.dict('os.environ',{'OPENAI_API_KEY':''}):
+            with self.assertRaisesRegex(InfrastructureError,'credential_missing'):OpenAI(effective['config']['provider'])
         body=loads(completion({}).body);body['usage']['private']='SECRET';body['private']='SECRET'
-        _,provenance=parse_response(HttpResponse(200,canonical(body)),'test/model')
+        _,provenance=parse_response(HttpResponse(200,canonical(body)),'test-model')
         self.assertNotIn('SECRET',str(provenance))
 
     def test_hard_deadline_trickled_headers_and_body_with_local_server(self):
@@ -140,3 +149,88 @@ class Provider(unittest.TestCase):
             result=HttpTransport().request(b'{}','test-secret-sentinel',1,1024)
         self.assertEqual(result,HttpResponse(401,b''))
         self.assertNotIn('test-secret-sentinel',str(captured))
+
+
+    def test_only_openai_credentials_are_read_and_invalid_keys_fail_locally(self):
+        with example() as (_, effective, _):
+            config = effective['config']['provider']
+            with patch.dict('os.environ', {'OPENAI_API_KEY':'openai-test-key',
+                    'OPENROUTER_API_KEY':'legacy-test-key', 'OPENAI_BASE_URL':'https://invalid.example'}, clear=True):
+                transport = Mock(); transport.request.return_value = completion({})
+                client = OpenAI(config, transport=transport)
+                _, provenance = client.review([], {}, 10, 1)
+                self.assertEqual(transport.request.call_args.args[1], 'openai-test-key')
+                self.assertEqual(provenance['endpoint'], ENDPOINT)
+            for key in ('', ' ', 'bad key', 'bad\nkey', 'bad\rkey', 'badékey'):
+                with self.subTest(key=key), patch.dict('os.environ', {
+                        'OPENAI_API_KEY':key, 'OPENROUTER_API_KEY':'legacy-test-key'}):
+                    with self.assertRaisesRegex(InfrastructureError, 'credential_missing'):
+                        OpenAI(config)
+            with self.assertRaisesRegex(InfrastructureError, 'credential_missing'):
+                OpenAI(config, api_key='bad\x00key')
+
+    def test_placeholder_cannot_make_a_production_request(self):
+        with example() as (_, effective, _), patch.object(HttpTransport, 'request') as network:
+            config = {**effective['config']['provider'], 'model':'SELECT_OPENAI_MODEL'}
+            with self.assertRaisesRegex(InfrastructureError, 'explicit_provider_model_required'):
+                OpenAI(config, api_key='test-key')
+            network.assert_not_called()
+
+    def test_json_object_is_explicit_and_uses_the_same_token_bound(self):
+        with example() as (_, effective, _):
+            config = {**effective['config']['provider'], 'response_format':'json_object', 'max_completion_tokens':512}
+            transport = Mock(); transport.request.return_value = completion({})
+            OpenAI(config, transport=transport, api_key='test-key').review([], {}, 5, 1)
+            request = loads(transport.request.call_args.args[0])
+            self.assertEqual(request['response_format'], {'type':'json_object'})
+            self.assertEqual(request['max_completion_tokens'], 512)
+            self.assertNotIn('max_tokens', request)
+            self.assertNotIn('provider', request)
+
+    def test_transient_retries_preserve_request_and_share_remaining_budget(self):
+        with example() as (_, effective, _):
+            for failure in (HttpResponse(429, b'PRIVATE'), HttpResponse(503, b'PRIVATE'), RuntimeError('PRIVATE')):
+                with self.subTest(failure=type(failure).__name__):
+                    transport = Mock(); transport.request.side_effect = [failure, completion({})]
+                    clock = Mock(side_effect=[0, 0, 2, 3, 4])
+                    sleeper = Mock()
+                    with patch('llm_verifier.provider.time.monotonic', clock):
+                        _, provenance = OpenAI(effective['config']['provider'], transport=transport,
+                            api_key='test-key', sleeper=sleeper).review([], {}, 10, 2)
+                    self.assertEqual(provenance['attempts'], 2)
+                    self.assertEqual(provenance['elapsed_seconds'], 4)
+                    calls = transport.request.call_args_list
+                    self.assertEqual(calls[0].args[:2], calls[1].args[:2])
+                    self.assertEqual([call.args[2] for call in calls], [10, 7])
+                    sleeper.assert_called_once_with(.5)
+
+    def test_transport_return_after_deadline_is_not_a_judgment(self):
+        with example() as (_, effective, _):
+            transport = Mock(); transport.request.return_value = completion({})
+            with patch('llm_verifier.provider.time.monotonic', side_effect=[0, 0, 11]):
+                with self.assertRaisesRegex(InfrastructureError, 'time_budget'):
+                    OpenAI(effective['config']['provider'], transport=transport, api_key='test-key').review([], {}, 10, 1)
+            transport.request.assert_called_once()
+
+    def test_nonstop_and_refused_successes_are_not_retried(self):
+        with example() as (_, effective, _):
+            for change in ('refusal','length','content_filter'):
+                body = loads(completion({}).body)
+                if change == 'refusal': body['choices'][0]['message']['refusal'] = 'PRIVATE'
+                else: body['choices'][0]['finish_reason'] = change
+                transport = Mock(); transport.request.return_value = HttpResponse(200, canonical(body))
+                with self.assertRaisesRegex(InfrastructureError, 'provider_response_invalid'):
+                    OpenAI(effective['config']['provider'], transport=transport, api_key='test-key').review([], {}, 10, 3)
+                transport.request.assert_called_once()
+
+    def test_native_snapshot_and_numeric_usage_are_retained_without_extra_metadata(self):
+        body = loads(completion({}, model='gpt-4.1-2025-04-14').body)
+        body['choices'][0]['message']['refusal'] = None
+        body['usage']['completion_tokens_details'] = {'reasoning_tokens':10, 'private':'PRIVATE'}
+        body['system_fingerprint'] = 'PRIVATE'
+        _, provenance = parse_response(HttpResponse(200, canonical(body)), 'gpt-4.1')
+        self.assertEqual(provenance['configured_model'], 'gpt-4.1')
+        self.assertEqual(provenance['returned_model'], 'gpt-4.1-2025-04-14')
+        self.assertEqual(provenance['request_id'], 'chatcmpl-test')
+        self.assertEqual(provenance['usage'], {'prompt_tokens':100,'completion_tokens':50,'total_tokens':150})
+        self.assertNotIn('PRIVATE', str(provenance))

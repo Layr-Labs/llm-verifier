@@ -58,7 +58,7 @@ class Runner(unittest.TestCase):
     def test_docker_setup_failure_redacted_and_named_cleanup(self):
         with example('computation') as (_,effective,intake):
             runner=DockerRunner(effective['config']['runtime'],effective['config']['limits'])
-            with patch('shutil.which',return_value='/usr/bin/docker'),patch('subprocess.run',side_effect=lambda cmd,**kw:Mock(returncode=1 if cmd[1]=='image' else 0,stdout=b'')) as run,patch.dict('os.environ',{'OPENROUTER_API_KEY':'SECRET','AWS_SECRET_ACCESS_KEY':'SECRET','DOCKER_HOST':'tcp://remote:2375'}),self.assertRaisesRegex(InfrastructureError,'docker_image_or_daemon_unavailable'):
+            with patch('shutil.which',return_value='/usr/bin/docker'),patch('subprocess.run',side_effect=lambda cmd,**kw:Mock(returncode=1 if cmd[1]=='image' else 0,stdout=b'')) as run,patch.dict('os.environ',{'OPENAI_API_KEY':'SECRET','AWS_SECRET_ACCESS_KEY':'SECRET','DOCKER_HOST':'tcp://remote:2375'}),self.assertRaisesRegex(InfrastructureError,'docker_image_or_daemon_unavailable'):
                 runner.run(intake['data']['files'],'check.py',{'n':10},20)
             cleanup=run.call_args.args[0]
             self.assertEqual(cleanup[:3],['/usr/bin/docker','rm','-f'])
@@ -115,10 +115,10 @@ try:
  Path('/snapshot/entrypoint.py').write_text('changed')
 except OSError:
  read_only=True
-print(json.dumps({'uid':os.getuid(),'readonly':read_only,'key':os.environ.get('OPENROUTER_API_KEY'),'socket':Path('/var/run/docker.sock').exists(),'interfaces':socket.if_nameindex()}))
+print(json.dumps({'uid':os.getuid(),'readonly':read_only,'key':os.environ.get('OPENAI_API_KEY'),'socket':Path('/var/run/docker.sock').exists(),'interfaces':socket.if_nameindex()}))
 '''
             files={'probe.py':{'text':source}}
-            with patch.dict('os.environ',{'OPENROUTER_API_KEY':'must-not-enter-container'}):
+            with patch.dict('os.environ',{'OPENAI_API_KEY':'must-not-enter-container'}):
                 probe=runner.run(files,'probe.py',{},20)
             self.assertEqual(probe['status'],'completed',probe)
             self.assertEqual(probe['result']['uid'],65534)

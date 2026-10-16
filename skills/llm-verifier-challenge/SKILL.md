@@ -12,7 +12,7 @@ as the CLI. If this skill is installed separately, obtain `docs/authoring.md` fr
 Use the task's specification, challenge name, reviewer model and verifier revision.
 Resolve ambiguities affecting scope, eligibility or score meaning before encoding them.
 
-- For a new directory, run `llm-verifier init DIRECTORY --name NAME --model PROVIDER/MODEL`.
+- For a new directory, run `llm-verifier init DIRECTORY --name NAME --model OPENAI_MODEL`.
   Replace the toy rules, objective and example submission together.
 - Edit ordinary files. Keep scientific rules in `rules.md`, store each proof once,
   and reference its files from the claim. Use `score_source` for each scoring objective.

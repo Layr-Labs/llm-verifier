@@ -2,7 +2,7 @@
 
 `llm_verifier` is an installable Python 3.11+ package and `llm-verifier` CLI for
 organizer-defined mathematical challenges. It snapshots a submission, captures
-bounded computational evidence in Docker, asks one OpenRouter reviewer for a
+bounded computational evidence in Docker, asks one OpenAI reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
@@ -42,13 +42,13 @@ Simulation never calls a model or executes submitted Python. Its scripted
 provider and execution results are visibly marked, and it writes a
 `simulation_only: true, publishable: false` envelope. It cannot write a
 Yukon-compatible top-level score; ordinary finalization rejects any simulated
-phase. Injecting a custom provider, runner or OpenRouter transport also marks
+phase. Injecting a custom provider, runner or OpenAI transport also marks
 its artifacts as simulation. Production workflow inputs cannot select simulation.
 
 ## Create a challenge
 
 ```sh
-llm-verifier init my-challenge --name my-challenge --model PROVIDER/MODEL
+llm-verifier init my-challenge --name my-challenge --model OPENAI_MODEL
 llm-verifier check --root my-challenge
 ```
 
@@ -74,9 +74,11 @@ uses `--pull=never`. An empty initial plan needs no Docker service, even when
 checkers are registered for potential follow-up. Docker execution is
 Linux/amd64 through `/var/run/docker.sock`; there is no host execution fallback.
 
-The organizer must replace the examples' `ORGANIZER/MODEL` placeholder with an
-explicit accessible OpenRouter model and authorize any paid use. A separate
-review process/job receives `OPENROUTER_API_KEY` in its environment:
+The organizer must replace the examples' `SELECT_OPENAI_MODEL` placeholder with
+an explicit accessible native OpenAI model ID in `provider.model` (no `openai/`
+prefix) and authorize any paid use. The placeholder works only for offline
+validation/simulation. A separate review process/job receives `OPENAI_API_KEY`
+in its environment:
 
 ```sh
 # Credentialed REVIEW job; never execute candidates in this job.

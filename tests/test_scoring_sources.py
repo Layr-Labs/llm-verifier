@@ -19,7 +19,7 @@ from tests.test_checks import registered, initial_run, result, retry
 @contextmanager
 def starter(change=None, configure=None):
     with tempfile.TemporaryDirectory() as tmp:
-        root=Path(tmp)/'challenge'; scaffold.initialize(root,'test','explicit/model')
+        root=Path(tmp)/'challenge'; scaffold.initialize(root,'test','test-model')
         if change:
             submission=read_json(root/'submission/submission.json'); change(submission)
             write_json(root/'submission/submission.json',submission)

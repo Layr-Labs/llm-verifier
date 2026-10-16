@@ -17,9 +17,9 @@ class Authoring(unittest.TestCase):
     def test_editable_starter_and_normal_working_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'challenge'
-            scaffold.initialize(root, 'new-challenge', 'explicit/model')
+            scaffold.initialize(root, 'new-challenge', 'test-model')
             self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]), 6)
-            self.assertEqual(read_json(root/'verifier.json')['provider']['model'], 'explicit/model')
+            self.assertEqual(read_json(root/'verifier.json')['provider']['model'], 'test-model')
             (root/'rules.md').write_text('A revised challenge specification.')
             (root/'.venv').mkdir(); (root/'.venv/cache').write_text('irrelevant')
             (root/'notes.md').write_text('Author notes')
@@ -31,19 +31,19 @@ class Authoring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)/'challenge'; root.mkdir(); (root/'keep').write_text('original')
             with self.assertRaisesRegex(VerifierError, 'already_exists'):
-                scaffold.initialize(root, 'test', 'a/b')
+                scaffold.initialize(root, 'test', 'test-model')
             self.assertEqual((root/'keep').read_text(), 'original')
-            for model in ('ORGANIZER/MODEL', 'invalid model'):
+            for model in ('SELECT_OPENAI_MODEL', 'invalid model'):
                 with self.assertRaises(VerifierError):
                     scaffold.initialize(Path(tmp)/'bad', 'test', model)
                 self.assertFalse((Path(tmp)/'bad').exists())
             (root/'link').symlink_to(tmp, target_is_directory=True)
             with self.assertRaises(VerifierError):
-                scaffold.initialize(root/'link/unsafe', 'test', 'a/b')
+                scaffold.initialize(root/'link/unsafe', 'test', 'test-model')
 
     def test_declared_proof_and_checker_files_stay_protected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'a/b')
+            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model')
             (root/'submission/proof.md').unlink()
             with self.assertRaisesRegex(VerifierError, 'claim_evidence_file_missing'):
                 scaffold.check(root)
@@ -53,7 +53,7 @@ class Authoring(unittest.TestCase):
 
     def test_hosted_files_refresh_from_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'a/b')
+            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model')
             scaffold.github(root, 'owner/verifier', 'a'*40)
             workflow=(root/'.github/workflows/benchmark.yml').read_text()
             self.assertEqual(workflow.count('a'*40), 2)
@@ -61,7 +61,7 @@ class Authoring(unittest.TestCase):
             self.assertEqual(checker_workflow.count('a'*40),2)
             self.assertIn('on: [push, pull_request, workflow_dispatch]',checker_workflow)
             self.assertIn('owner/verifier/.github/workflows/test-checkers.yml@',checker_workflow)
-            self.assertNotIn('OPENROUTER_API_KEY',checker_workflow)
+            self.assertNotIn('OPENAI_API_KEY',checker_workflow)
             benchmark=read_json(root/'benchmark.json'); benchmark['tracks'][0]['description']='Human description'
             write_json(root/'benchmark.json',benchmark)
             self.assertTrue(scaffold.check(root)['valid'])
@@ -101,6 +101,6 @@ class Authoring(unittest.TestCase):
             runner=Mock()
             with self.assertRaises(VerifierError):scaffold.test_checkers(root,runner=runner)
             runner.run.assert_not_called()
-            with patch.dict(os.environ,{'OPENROUTER_API_KEY':'test-only'}), self.assertRaisesRegex(VerifierError,'credential_free'):
+            with patch.dict(os.environ,{'OPENAI_API_KEY':'test-only'}), self.assertRaisesRegex(VerifierError,'credential_free'):
                 scaffold.test_checkers(root,runner=runner)
             runner.run.assert_not_called()

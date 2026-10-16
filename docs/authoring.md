@@ -3,9 +3,12 @@
 Install this verifier revision, then create a six-file working example:
 
 ```sh
-llm-verifier init my-challenge --name my-challenge --model PROVIDER/MODEL
+llm-verifier init my-challenge --name my-challenge --model OPENAI_MODEL
 llm-verifier check --root my-challenge
 ```
+
+Replace `OPENAI_MODEL` with an explicitly selected native OpenAI model ID; there
+is no default. Review processes alone need `OPENAI_API_KEY`.
 
 Edit `rules.md`, `verifier.json`, and `submission/` directly. Rules contain the
 scientific specification; configuration selects objectives, a reviewer and any

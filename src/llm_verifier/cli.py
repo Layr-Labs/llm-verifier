@@ -20,7 +20,7 @@ def parser():
     cmd = sub.add_parser("init", help="Create editable challenge source files")
     cmd.add_argument("output")
     cmd.add_argument("--name", required=True)
-    cmd.add_argument("--model", required=True)
+    cmd.add_argument("--model", required=True, help="Explicit native OpenAI model ID; no default")
     for command, help_text in (("check", "Validate challenge source without execution"),
                                ("test-checkers", "Run known-answer cases with the production Docker runner"),
                                ("github", "Generate or refresh the Yukon manifest and pinned Actions caller")):
@@ -54,10 +54,10 @@ def parser():
     cmd = sub.add_parser("followup", help="Credential-free single requested experiment batch")
     artifacts(cmd, True, True)
     cmd.add_argument("--out", required=True)
-    cmd = sub.add_parser("review-initial", help="Credentialed review; never executes candidates")
+    cmd = sub.add_parser("review-initial", help="OpenAI review using OPENAI_API_KEY; never executes candidates")
     artifacts(cmd, True)
     cmd.add_argument("--out", required=True)
-    cmd = sub.add_parser("review-final", help="Credentialed final review, judgment only")
+    cmd = sub.add_parser("review-final", help="OpenAI final review using OPENAI_API_KEY, judgment only")
     artifacts(cmd, True, True, True)
     cmd.add_argument("--out", required=True)
     cmd = sub.add_parser("finalize", help="Validate chain and emit exactly one Yukon score plus dossier")

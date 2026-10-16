@@ -58,7 +58,10 @@ def evidence_refs(intake, initial, followup=None):
     for report in (initial, followup):
         if report is not None:
             refs.extend(run["id"] for run in report["data"]["runs"])
-    refs.extend("prior:" + ref["submission_id"] for ref in intake["data"]["manifest"].get("prior_results", []))
+    snapshot = intake["data"]["prior_snapshot"]
+    available = {ref["submission_id"] for ref in (snapshot["references"] if snapshot else []) if "bundle_sha256" in ref}
+    refs.extend("prior:" + ref["submission_id"] for ref in intake["data"]["manifest"].get("prior_results", [])
+                if ref["submission_id"] in available)
     return refs
 
 
@@ -181,6 +184,21 @@ def review_material(intake, initial, initial_review=None, followup=None):
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
     system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
+    unavailable = [ref for ref in (data["prior_snapshot"]["references"] if data["prior_snapshot"] else []) if "unavailable" in ref]
+    if unavailable:
+        evidence["unavailable_prior_results"] = unavailable
+        system += """
+The platform marks unavailable_prior_results as unavailable mathematical support.
+These IDs supply no accepted premise or inherited dependency. rejected means a
+completed rejection; review_required means completed but awaiting required review;
+dependency_unavailable means accepted support is blocked by a dependency.
+None of these statuses proves a theorem false. Do not use an unavailable result,
+its old acceptance or its negation as a premise. Establish ALL current declared
+claims from independent current evidence and the available accepted prior_results,
+or reject the submission with a reason. Pending or failed execution is not a
+mathematical judgment; never invent one. Only available accepted IDs have prior:
+evidence references. The original atomic and external-evidence policies still apply.
+"""
     messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + POLICY},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:

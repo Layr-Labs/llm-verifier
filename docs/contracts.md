@@ -156,7 +156,10 @@ It transfers neither scores nor checker authority.
 
 [Automatic prior resolution](prior-results.md) binds a platform snapshot to the
 current intake, including exact raw source bytes and selected validity/ancestor
-identities. No later phase refetches references. Valid finalization can emit an
+identities. Its bounded references partition accepted sources from unavailable
+support. Only accepted available sources have premise references and inherited
+ancestry; a new independent proof may succeed without using unavailable support.
+No later phase refetches references. Valid finalization can emit an
 accepted bundle; invalid judgments emit only the platform receipt alongside the
 normal dossier/score. Empty-reference platform intakes also emit that receipt.
 Simulation cannot emit reusable results or an official score.

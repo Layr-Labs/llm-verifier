@@ -77,18 +77,34 @@ For a computational objective, select a required numeric output field:
 
 The checker must be `required_for_score`; only passing, schema-valid results for
 the submission's exact declared inputs qualify. Conflicting canonical retries
-block acceptance; diagnostic inputs cannot replace the declared witness.
+make numeric scoring unavailable; diagnostic inputs cannot replace the declared witness.
 
-The verifier binds the source to the complete immutable submission snapshot and
-supplies a `claim:<hash>` ID to the reviewer. The model returns `scores: null` and
-accepts the exact ID only when the claim meets the rules. The dossier derives the
-numeric tuple from those acceptances and retains exact records. Acceptance of a
-lemma or an ID from another snapshot awards no score. Every required checker must
-still pass. Partial objective acceptance leaves the whole tuple unscored.
+### Score availability
+
+Every declared claim must be established exactly as written for `valid: true`.
+For bound objectives the model returns `scores: null`. The verifier derives the
+complete tuple only when validity is true, all current sources are ready and
+every required canonical checker passes. Source digests bind the complete current
+snapshot; they are provenance, not claim-acceptance selectors. There is no partial
+objective acceptance or partial score records.
+
+If a bound source is absent, checker outputs conflict, a checker result is outside
+objective bounds or a required check is missing/failed, scores and score records
+are unavailable. Valid work may remain unscored when `allow_unscored: true`;
+otherwise a valid judgment without complete permitted records fails validation.
+This is separate from mathematical rejection. Structured claim values outside
+protected bounds are rejected earlier by `check`, intake and artifact validation,
+as described above. They do not reach this unscored branch.
+
+Every review follows [atomic-claims-v1](atomic-claims.md). Declared claims must
+include material assumptions, scope, parameters and nonstandard definitions for
+interpretation. Proof files contain the supporting argument. A narrower
+lemma belongs in a separate submission.
 
 A maximizing proof claim can declare `"score": "positive_infinity"`. If accepted,
 its exact record is retained with `unsupported_positive_infinity` projection and
-null numeric scores. Yukon does not natively order this endpoint. Finite rationals
+null numeric scores. This complete exact endpoint is permitted even with
+`allow_unscored: false`; no finite tuple is fabricated. Yukon does not natively order this endpoint. Finite rationals
 project to binary64 and may tie despite different exact values. Scientific review
 and any manual promotion must account for those platform limits.
 

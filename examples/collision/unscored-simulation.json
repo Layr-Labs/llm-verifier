@@ -7,13 +7,6 @@
       "valid": true,
       "scores": null,
       "reason": "A relevant abstract lemma supplies no concrete pair; the required score check is missing, so scores remain null.",
-      "accepted_claims": [
-        "The pigeonhole existence lemma holds."
-      ],
-      "assumptions": [],
-      "unresolved_obligations": [
-        "No full SHA-256 collision, complexity, probability or global optimality established."
-      ],
       "evidence_refs": [
         "source:proof.md"
       ],

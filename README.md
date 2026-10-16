@@ -6,8 +6,9 @@ bounded computational evidence in Docker, asks one OpenAI reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-Version 0.3 adds editable challenge starters, shared checker tests and deterministic
-score sources for proof claims and protected checker outputs. It is an LLM assessment, not formal certification or an
+The verifier uses [atomic acceptance](docs/atomic-claims.md) of the entire original
+declared claim set, retaining editable challenge starters, shared checker tests
+and deterministic score sources for proof claims and protected checker outputs. It is an LLM assessment, not formal certification or an
 authoritative benchmark. The examples and scripted results demonstrate
 plumbing, not mathematical reliability. The internal repository is
 `Layr-Labs/llm-verifier`. Publishing reviewed source internally does not validate

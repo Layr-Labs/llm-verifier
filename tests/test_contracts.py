@@ -24,7 +24,7 @@ class Contracts(unittest.TestCase):
             with self.subTest(valid=valid), example() as (root, effective, intake):
                 decision=read_json(root/'simulation.json')['initial_decision']
                 if not valid:
-                    decision['judgment'].update(valid=False,accepted_claims=[],reason='The submitted equality is unsupported.')
+                    decision['judgment'].update(valid=False,reason='The submitted equality is unsupported.')
                 initial,first=direct(root,intake,decision)
                 result=pipeline.finalize(intake,initial,first,root/'score.json',root/'dossier.json')
                 self.assertEqual(read_json(root/'score.json'),{'valid':valid,'scores':None,'reason':decision['judgment']['reason']})

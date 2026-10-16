@@ -6,15 +6,6 @@
       "valid": true,
       "scores": null,
       "reason": "The explicitly scoped lemma follows by expanding a nonnegative square.",
-      "accepted_claims": [
-        "For all real a,b, 2ab <= a^2+b^2. This is a standalone lemma, not the full dimension-100 target."
-      ],
-      "assumptions": [
-        "Real arithmetic."
-      ],
-      "unresolved_obligations": [
-        "The full dimension-100 target is not proved by this submission."
-      ],
       "evidence_refs": [
         "source:proof.md"
       ],

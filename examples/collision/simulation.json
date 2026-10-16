@@ -36,13 +36,6 @@
       "valid": true,
       "scores": null,
       "reason": "The canonical pair passed; the diagnostic identical-message pair failed. Score is the canonical pair total_bytes only.",
-      "accepted_claims": [
-        "claim:198e808ae8cd5fb17161b9b3f8065801d9720c2d175d5bd7d068fad1a1e89b60"
-      ],
-      "assumptions": [],
-      "unresolved_obligations": [
-        "No full SHA-256 collision, complexity, probability or global optimality established."
-      ],
       "evidence_refs": [
         "run:initial:0",
         "run:followup:0"

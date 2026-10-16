@@ -17,7 +17,7 @@ Required fields:
 | `rules_path` | Bounded relative POSIX path to UTF-8 rules, outside submission |
 | `review_standard` | Exact label required in every judgment |
 | `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source`, inclusive `score_minimum` / `score_maximum` |
-| `allow_unscored` | Whether valid partial work can have `scores: null` |
+| `allow_unscored` | Whether an accepted entire declared set can remain unscored |
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |
 | `provider` | Explicit `model`; optional settings below |

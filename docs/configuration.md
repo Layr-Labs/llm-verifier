@@ -17,7 +17,7 @@ Required fields:
 | `rules_path` | Bounded relative POSIX path to UTF-8 rules, outside submission |
 | `review_standard` | Exact label required in every judgment |
 | `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source`, inclusive `score_minimum` / `score_maximum` |
-| `allow_unscored` | Whether valid partial work can have `scores: null` |
+| `allow_unscored` | Whether an accepted entire declared set can remain unscored |
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |
 | `provider` | Explicit `model`; optional settings below |
@@ -172,3 +172,16 @@ conditionals, unions, regexes, defaults, coercion, extra keywords and additional
 properties are rejected. Property names are bounded strings. The reference
 JSON schemas describe structural shapes; executable validators additionally
 check this dialect, limits, source references and semantic bindings.
+
+## Scientific evidence and prior results
+
+`evidence_policy` is optional in authored config and always normalizes to
+`atomic-claims-v1`; any other value is rejected. This policy cannot be
+relaxed by challenge prose or selected instructions. Every judgment includes the
+[mandatory evidence report](evidence-policy.md).
+
+The submission may declare `prior_results` as up to 64 exact
+`{submission_id}` records. [Automatic resolution](prior-results.md)
+uses the trusted platform context at intake. There is no `prior_imports` config,
+candidate URL/file import, owner allowlist or reference-specific credential.
+Editable source checks validate selectors without resolving them.

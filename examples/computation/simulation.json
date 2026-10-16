@@ -32,13 +32,6 @@
         25
       ],
       "reason": "Induction establishes the formula and the finite loop plus captured results supports checked coverage through N=25.",
-      "accepted_claims": [
-        "For each integer n >= 0, sum(k*k for k in 0..n) = n(n+1)(2n+1)/6."
-      ],
-      "assumptions": [
-        "Python integer arithmetic and the declared finite loop are interpreted as stated."
-      ],
-      "unresolved_obligations": [],
       "evidence_refs": [
         "source:proof.md",
         "source:check.py",

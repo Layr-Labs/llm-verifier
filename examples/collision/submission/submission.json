@@ -2,7 +2,7 @@
   "version": 1,
   "title": "A concrete collision for a TOY eight-bit target",
   "claims": [
-    "The declared distinct pair collides under the protected toy target; no full SHA-256 collision or optimality claim."
+    "The distinct UTF-8 strings \"m3\" and \"m17\" have identical first 8 bits of SHA-256(\"llmv-toy-v1:\" || UTF-8(string)), where || denotes byte concatenation. This is an 8-bit truncation collision, not a full SHA-256 collision or an optimality claim."
   ],
   "experiments": [],
   "checks": [

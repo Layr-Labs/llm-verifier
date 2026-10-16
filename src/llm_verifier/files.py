@@ -224,3 +224,18 @@ def write_bytes(path, payload):
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+
+def distinct_paths(inputs, outputs):
+    """Preserve input files before stale-output cleanup, including aliases."""
+    sources = [Path(os.path.abspath(p)) for p in inputs if p is not None]
+    destinations = [Path(os.path.abspath(p)) for p in outputs if p is not None]
+    for index, destination in enumerate(destinations):
+        for other in sources + destinations[:index]:
+            if destination == other:
+                raise VerifierError("distinct_input_output_paths_required")
+            try:
+                if os.path.samefile(destination, other):
+                    raise VerifierError("distinct_input_output_paths_required")
+            except (FileNotFoundError, NotADirectoryError):
+                pass

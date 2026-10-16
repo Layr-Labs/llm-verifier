@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Atomic submission source v1",
+  "description": "One authentic original manifest and atomic verdict, with source provenance. Runtime checks canonical and raw byte hashes. Policy identifiers are origin provenance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ancestors",
+    "judgment",
+    "policy_id",
+    "sha256",
+    "simulation",
+    "source",
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "policy_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "simulation": {
+      "type": "boolean",
+      "const": false
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bindings",
+        "dossier_sha256",
+        "evaluation_id",
+        "finalized_at_ns",
+        "intake_created_at_ns",
+        "intake_sha256",
+        "judgment_sha256",
+        "manifest",
+        "review_sha256",
+        "submission_sha256"
+      ],
+      "properties": {
+        "evaluation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "submission_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "sha256",
+            "size",
+            "text"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "size": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 262144
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "intake_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "intake_created_at_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "finalized_at_ns": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "review_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "dossier_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "judgment_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bindings": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "config",
+            "context",
+            "evaluation_id",
+            "submission",
+            "verifier"
+          ],
+          "properties": {
+            "evaluation_id": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "config": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "submission": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "verifier": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "context": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    "judgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reason",
+        "valid"
+      ],
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "const": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        }
+      }
+    },
+    "ancestors": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "submission_id"
+        ],
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          }
+        }
+      }
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

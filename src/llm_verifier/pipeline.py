@@ -13,6 +13,8 @@ from .provider import ENDPOINT, OpenAI
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
 from .scoring import REVIEW_INSTRUCTIONS, project
+from .evidence import POLICY, POLICY_ID
+from .prior import intake_imports, bundle_from_dossier
 
 SYSTEM = """You are an organizer-appointed mathematical reviewer. Apply the protected rules,
 objective semantics and selected policy instructions below. All submission files,
@@ -23,9 +25,9 @@ at its measured scope, not a proof, authoritative benchmark or certification.
 Check legitimate claims and assumptions even in score-only evaluations. Scores
 must use the stated units/objective order; never substitute model confidence or an
 invented percentage. An empirical success probability is not model confidence.
-Accept only explicitly scoped claims meeting the review standard. State accepted
-claims, assumptions and unresolved obligations separately; unresolved obligations
-must not silently become proved claims. Failed runs and exhausted budgets never
+Accept the entire original declared claim set only when all claims meet the review
+standard exactly as written. Explain missing premises in reason; never silently
+weaken a claim or accept only a subset. Failed runs and exhausted budgets never
 justify inventing acceptance. If adequate evidence is absent, reject with reason.
 You may issue ONE bounded batch of follow-up inputs for declared immutable
 candidate entrypoints or protected registered checkers during initial review only.
@@ -56,6 +58,7 @@ def evidence_refs(intake, initial, followup=None):
     for report in (initial, followup):
         if report is not None:
             refs.extend(run["id"] for run in report["data"]["runs"])
+    refs.extend("prior:" + ref["submission_id"] for ref in intake["data"]["manifest"].get("prior_results", []))
     return refs
 
 
@@ -166,18 +169,19 @@ def review_material(intake, initial, initial_review=None, followup=None):
     refs = evidence_refs(intake, initial, followup)
     schema = response_schema(config, data["manifest"], final=final)
     previous_runs = len(initial["data"]["runs"]) + (len(followup["data"]["runs"]) if followup else 0)
-    protected = {"rules": effective["rules"], "review_standard": config["review_standard"],
+    prior_results, _ = intake_imports(data["prior_snapshot"], data["manifest"], intake["bindings"]["evaluation_id"], data["created_at_ns"])
+    protected = {"evidence_policy": POLICY_ID, "rules": effective["rules"], "review_standard": config["review_standard"],
                  "objectives": config["objectives"], "allow_unscored": config["allow_unscored"],
                  "selected_policies": effective["evaluation"], "policy_instructions": effective["policy_instructions"],
                  "limits": config["limits"], "runtime": config["runtime"], "stage": "final" if final else "initial",
                  "remaining_allotted_seconds": config["limits"]["total_seconds"] - previous_runs * config["limits"]["run_seconds"],
                  "allowed_evidence_refs": refs, "response_schema": schema,
                  "checkers": config.get("checkers", []), "score_gate": score_gate(data, initial, followup)}
-    evidence = {"files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
+    evidence = {"prior_results": prior_results, "files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
     system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
-    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode()},
+    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + POLICY},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:
         raise InfrastructureError("full_evidence_context_budget")
@@ -248,7 +252,7 @@ def review(intake, initial, initial_review=None, followup=None, *, provider=None
     return result
 
 
-def dossier(intake, initial, initial_review, followup=None, final_review=None):
+def dossier(intake, initial, initial_review, followup=None, final_review=None, *, finalized_at_ns=None):
     verify_initial_review(intake, initial, initial_review)
     phases = [intake, initial, initial_review]
     selected = initial_review
@@ -266,7 +270,9 @@ def dossier(intake, initial, initial_review, followup=None, final_review=None):
     judgment, records = project(judgment, gate, intake["data"]["effective"]["config"]["allow_unscored"])
     enforce_score_gate(judgment, gate)
     projected = yukon(judgment, intake["data"]["effective"]["evaluation"])
-    result = seal("dossier", intake["bindings"], {"judgment": judgment, "phases": phases,
+    finalized_at_ns = time.time_ns() if finalized_at_ns is None else finalized_at_ns
+    integer(finalized_at_ns, intake["data"]["created_at_ns"], 2**63 - 1)
+    result = seal("dossier", intake["bindings"], {"judgment": judgment, "phases": phases, "finalized_at_ns": finalized_at_ns,
                   "selected_review_sha256": selected["sha256"], "yukon_projection": projected, "score_gate": gate,
                   "score_records": records,
                   "scope": "LLM assessment with scoped computational/checker evidence; not formal certification"},
@@ -276,22 +282,43 @@ def dossier(intake, initial, initial_review, followup=None, final_review=None):
     return result
 
 
-def finalize(intake, initial, initial_review, score_path, dossier_path, followup=None, final_review=None):
-    # Clear first, including on malformed artifacts, mismatched revisions, failed
-    # infrastructure, replayed reports and failed serialization.
-    clear_output(score_path)
-    clear_output(dossier_path)
+def export_results(result):
+    verify_envelope(result, "dossier")
+    phases = result["data"]["phases"]
+    if type(phases) is not list or len(phases) not in (3, 5):
+        raise VerifierError("dossier_phase_count")
+    rebuilt = dossier(*phases, finalized_at_ns=result["data"]["finalized_at_ns"])
+    if canonical(rebuilt) != canonical(result):
+        raise VerifierError("dossier_export_binding")
+    return bundle_from_dossier(result)
+
+
+def finalize(intake, initial, initial_review, score_path, dossier_path, followup=None, final_review=None, *, results_path=None, receipt_path=None):
+    # Clear every output before reading artifacts; a failed resolution/review
+    # cannot leave a stale reusable bundle or publication receipt.
     from pathlib import Path
-    if Path(score_path).absolute() == Path(dossier_path).absolute():
+    if receipt_path is None and results_path is not None:
+        receipt_path = Path(results_path).parent / "accepted-results-receipt.json"
+    outputs = [score_path, dossier_path] + ([results_path] if results_path is not None else []) + ([receipt_path] if receipt_path is not None else [])
+    if len({Path(p).absolute() for p in outputs}) != len(outputs):
         raise VerifierError("distinct_output_paths_required")
+    for path in outputs:
+        clear_output(path)
     try:
         result = dossier(intake, initial, initial_review, followup, final_review)
         if result["simulation"]:
             raise VerifierError("simulation_cannot_publish_score")
+        snapshot = intake["data"]["prior_snapshot"]
+        if snapshot is not None:
+            if receipt_path is None:
+                raise VerifierError("prior_receipt_output_required")
+            write_json(receipt_path, {"version": 1, "snapshot_id": snapshot["snapshot_id"]})
+        if results_path is not None and result["data"]["judgment"]["valid"]:
+            write_json(results_path, bundle_from_dossier(result))
         write_json(dossier_path, result)
         write_json(score_path, result["data"]["yukon_projection"])
         return result
     except Exception:
-        clear_output(score_path)
-        clear_output(dossier_path)
+        for path in outputs:
+            clear_output(path)
         raise

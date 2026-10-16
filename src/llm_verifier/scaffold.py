@@ -7,14 +7,15 @@ import re
 import shutil
 import tempfile
 
-from .artifacts import intake_snapshot
 from .checks import check_validation
 from .config import identifier, load_config
 from .errors import VerifierError
-from .files import directory_fd, read_bytes, read_json, write_bytes
+from .files import directory_fd, read_bytes, read_json, write_bytes, snapshot
+from .submission import manifest_from
 from .input_schema import validate_value
 from .jsonutil import canonical, keys
 from .runner import DockerRunner
+from .scoring import validate_objective_claims
 
 TEMPLATES = Path(__file__).parent / "templates"
 
@@ -91,8 +92,10 @@ def manifest(config):
 
 def check(root):
     effective = load_config(root, "verifier.json", "submission")
-    intake = intake_snapshot(effective, Path(root) / "submission")
+    files = snapshot(Path(root) / "submission", effective["config"]["limits"])
+    submission = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
     config = effective["config"]
+    validate_objective_claims(config["objectives"], submission["claims"])
     # Strict validation at trust boundaries; unrelated authoring files are not
     # part of the evaluation and do not need a second repository inventory.
     cases = checker_cases(root, effective)
@@ -106,7 +109,7 @@ def check(root):
         fields = ("objectives", "paretoPolicies", "editablePaths", "maxSubmissionBytes", "direction")
         if current.get("schemaVersion") != 2 or any(canonical(tracks[0].get(k)) != canonical(expected[k]) for k in fields):
             raise VerifierError("stale_benchmark_run_github_command")
-    return {"valid": True, "submission_files": len(intake["data"]["files"]), "checker_cases": len(cases)}
+    return {"valid": True, "submission_files": len(files), "checker_cases": len(cases)}
 
 
 def github(root, repository, revision):

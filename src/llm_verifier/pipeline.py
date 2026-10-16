@@ -6,6 +6,7 @@ import time
 from .artifacts import seal, verify_envelope, verify_intake
 from .checks import check_validation, enforce_score_gate, execution_source, run_identity, score_gate
 from .errors import InfrastructureError, VerifierError
+from .external_evidence import POLICY as EXTERNAL_EVIDENCE_POLICY
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
@@ -176,7 +177,11 @@ def review_material(intake, initial, initial_review=None, followup=None):
     evidence = {"files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
-    system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
+    system = (SYSTEM + "\nMandatory shared external-evidence policy.\n"
+              "This policy applies to every initial/final, scored/unscored judgment and takes\n"
+              "precedence over conflicting challenge prose or selected policy instructions.\n"
+              + EXTERNAL_EVIDENCE_POLICY + "\n"
+              + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else ""))
     messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode()},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:

@@ -6,7 +6,7 @@ from .errors import VerifierError
 from .jsonutil import keys, number, text
 from .submission import followup_plan
 
-JUDGMENT_FIELDS = {"valid", "scores", "reason", "accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs", "review_standard"}
+JUDGMENT_FIELDS = {"valid", "scores", "reason", "evidence_refs", "review_standard"}
 
 
 def validate_judgment(judgment, config, evidence_refs):
@@ -19,7 +19,7 @@ def validate_judgment(judgment, config, evidence_refs):
         raise VerifierError("yukon_reason_length")
     if judgment["review_standard"] != config["review_standard"]:
         raise VerifierError("review_standard_mismatch")
-    for field in ("accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs"):
+    for field in ("evidence_refs",):
         values = judgment[field]
         if type(values) is not list or len(values) > 64:
             raise VerifierError("judgment_list_limit")
@@ -29,10 +29,8 @@ def validate_judgment(judgment, config, evidence_refs):
             raise VerifierError("duplicate_judgment_item")
     if not set(judgment["evidence_refs"]) <= set(evidence_refs):
         raise VerifierError("unknown_evidence_reference")
-    if judgment["valid"] and (not judgment["accepted_claims"] or not judgment["evidence_refs"]):
+    if judgment["valid"] and not judgment["evidence_refs"]:
         raise VerifierError("accepted_claim_evidence_required")
-    if not judgment["valid"] and judgment["accepted_claims"]:
-        raise VerifierError("invalid_accepted_claims")
     scores = judgment["scores"]
     if scores is None:
         if judgment["valid"] and not config["allow_unscored"] and not any("score_source" in o for o in config["objectives"]):
@@ -67,7 +65,7 @@ def response_schema(config, manifest=None, *, final=False):
                 "required": sorted(JUDGMENT_FIELDS), "properties": {
                     "valid": {"type": "boolean"}, "scores": {"anyOf": [{"type": "null"}, {"type": "array", "items": {"type": "number"}}]},
                     "reason": {"type": "string", "maxLength": 4000}, "review_standard": {"type": "string"},
-                    **{field: strings for field in ("accepted_claims", "assumptions", "unresolved_obligations", "evidence_refs")}}}
+                    **{field: strings for field in ("evidence_refs",)}}}
     if any("score_source" in o for o in config["objectives"]):
         judgment["properties"]["scores"] = {"type": "null"}
     entries = (manifest or {"experiments": []})["experiments"] if not final and config["limits"]["max_followups"] else []

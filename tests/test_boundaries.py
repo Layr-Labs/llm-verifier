@@ -156,7 +156,7 @@ class Boundaries(unittest.TestCase):
                         normalize(raw)
 
     def test_omitted_effort_preserves_normalized_config_bytes(self):
-        # Captured at 63530cff8266939c4383599ffd8bb2c7ffbc97e0, before effort support.
+        # Provider omission bytes remain fixed; the full fixture includes atomic policy prose.
         with example() as (_, effective, _):
             raw = copy.deepcopy(effective['config'])
             raw['provider'] = {'model':'test-model'}
@@ -166,5 +166,5 @@ class Boundaries(unittest.TestCase):
                 b'"model":"test-model","response_format":"json_schema","timeout_seconds":60}')
             self.assertNotIn('reasoning_effort', normalized['provider'])
             self.assertEqual(digest(normalized),
-                'a681f16d4b398f596a0dfcb1fa90d69fcf5bfa52397ca154b1253da8485c3190')
+                'efab4299c72272d4858b8d284dca35279b31786e12b2c1235dba2dbeda85d0f1')
             self.assertEqual(canonical(normalize(normalized)), canonical(normalized))

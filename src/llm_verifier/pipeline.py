@@ -6,7 +6,7 @@ import time
 from .artifacts import seal, verify_envelope, verify_intake
 from .checks import check_validation, enforce_score_gate, execution_source, run_identity, score_gate
 from .errors import InfrastructureError, VerifierError
-from .external_evidence import POLICY as EXTERNAL_EVIDENCE_POLICY
+from .evidence import POLICY
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
@@ -24,9 +24,9 @@ at its measured scope, not a proof, authoritative benchmark or certification.
 Check legitimate claims and assumptions even in score-only evaluations. Scores
 must use the stated units/objective order; never substitute model confidence or an
 invented percentage. An empirical success probability is not model confidence.
-Accept only explicitly scoped claims meeting the review standard. State accepted
-claims, assumptions and unresolved obligations separately; unresolved obligations
-must not silently become proved claims. Failed runs and exhausted budgets never
+Accept the entire original declared claim set only when all claims meet the review
+standard exactly as written. Explain missing premises in reason; never silently
+weaken a claim or accept only a subset. Failed runs and exhausted budgets never
 justify inventing acceptance. If adequate evidence is absent, reject with reason.
 You may issue ONE bounded batch of follow-up inputs for declared immutable
 candidate entrypoints or protected registered checkers during initial review only.
@@ -177,12 +177,8 @@ def review_material(intake, initial, initial_review=None, followup=None):
     evidence = {"files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
-    system = (SYSTEM + "\nMandatory shared external-evidence policy.\n"
-              "This policy applies to every initial/final, scored/unscored judgment and takes\n"
-              "precedence over conflicting challenge prose or selected policy instructions.\n"
-              + EXTERNAL_EVIDENCE_POLICY + "\n"
-              + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else ""))
-    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode()},
+    system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
+    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + POLICY},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:
         raise InfrastructureError("full_evidence_context_budget")

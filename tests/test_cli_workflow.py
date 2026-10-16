@@ -38,7 +38,7 @@ class CLI(unittest.TestCase):
     def test_invalid_judgment_cli_exits_successfully(self):
         with example() as (root,_,intake):
             decision=read_json(root/'simulation.json')['initial_decision']
-            decision['judgment'].update(valid=False,accepted_claims=[],reason='Not justified.')
+            decision['judgment'].update(valid=False,reason='Not justified.')
             initial,first=direct(root,intake,decision)
             for name,value in [('intake',intake),('initial',initial),('first',first)]:write_json(root/(name+'.json'),value)
             result=main(['finalize','--intake',str(root/'intake.json'),'--initial',str(root/'initial.json'),'--initial-review',str(root/'first.json'),'--score',str(root/'score.json'),'--dossier',str(root/'dossier.json')])

@@ -21,14 +21,14 @@ follow-up batches require both execution evidence and a final judgment. A second
 request round is a protocol failure. With no requests, both follow-up jobs may be
 skipped without skipping finalization.
 
-Judgments contain exactly `valid`, `scores`, `reason`, `accepted_claims`,
-`assumptions`, `unresolved_obligations`, `evidence_refs`, and `review_standard`.
-Validity is an explicit boolean. Scores are null or one finite number per
-objective. Reason is nonempty, bounded to 4,000 UTF-16 code units for Yukon. Accepted
-valid claims must cite at least one known source or run reference. Invalid
-judgments cannot claim acceptance. References are `source:<relative-path>` and
-`run:initial:<index>` / `run:followup:<index>`. Claims, assumptions and unresolved
-obligations remain explicit; the generic harness does not pretend to prove them.
+Judgments contain exactly `valid`, `scores`, `reason`, `evidence_refs` and
+`review_standard`. Validity accepts or rejects the entire original manifest claim
+set as written; no second claims list or report can redefine it. Reason is
+nonempty, bounded to 4,000 UTF-16 code units for Yukon. Valid judgments cite at
+least one known source or run reference. References are `source:<relative-path>`
+and `run:initial:<index>` / `run:followup:<index>`. The mandatory
+[atomic scientific policy](atomic-claims.md) governs assumptions, scope and
+external premises; semantic adequacy remains an LLM assessment.
 
 The model's stage response is `{kind, judgment, requests}`. A judgment has
 `kind: "judgment"`, the judgment object and `requests: []`; a request batch has

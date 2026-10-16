@@ -9,6 +9,11 @@ llm-verifier check --root my-challenge
 
 Replace `OPENAI_MODEL` with an explicitly selected native OpenAI model ID; there
 is no default. Review processes alone need `OPENAI_API_KEY`.
+For a model that supports it, set optional `provider.reasoning_effort` in
+`verifier.json`; see [provider configuration](configuration.md#provider-configuration)
+for exact values and model-specific support. CircuitBreaker explicitly requires
+`"model": "gpt-6-astra"` with `"reasoning_effort": "high"`. Omitting effort sends
+no effort setting; the generic starter has no effort default.
 
 Edit `rules.md`, `verifier.json`, and `submission/` directly. Rules contain the
 scientific specification; configuration selects objectives, a reviewer and any

@@ -10,7 +10,7 @@ from llm_verifier.config import load_config, normalize, select_evaluation
 from llm_verifier.errors import InfrastructureError, VerifierError
 from llm_verifier.files import read_json, write_json
 from llm_verifier.judgment import validate_judgment, yukon
-from llm_verifier.jsonutil import canonical
+from llm_verifier.jsonutil import canonical, digest
 from llm_verifier import pipeline
 from llm_verifier.provider import HttpTransport, OpenAI
 from llm_verifier.runner import DockerRunner, output_record
@@ -259,3 +259,27 @@ class Contracts(unittest.TestCase):
             with self.assertRaisesRegex(VerifierError, 'simulation_cannot_publish'):
                 pipeline.finalize(intake, initial, first, root/'score.json', root/'dossier.json')
             self.assertFalse((root/'score.json').exists())
+
+
+    def test_reasoning_effort_binds_intake_and_review_provenance(self):
+        for model in ('gpt-6-astra', 'gpt-6.1-sol'):
+            with self.subTest(model=model), example(mutate=lambda c:c['provider'].update(
+                    model=model, reasoning_effort='high')) as (root, effective, intake):
+                self.assertEqual(intake['bindings']['config'], digest(effective))
+                without_effort = copy.deepcopy(effective)
+                del without_effort['config']['provider']['reasoning_effort']
+                self.assertNotEqual(intake['bindings']['config'], digest(without_effort))
+                initial, first = direct(root, intake)
+                config = effective['config']['provider']
+                self.assertEqual(first['data']['provenance']['provider_config_sha256'], digest(config))
+                pipeline.dossier(intake, initial, first)
+                for effort in (None, 'medium', 'xhigh'):
+                    other_config = dict(config)
+                    if effort is None:
+                        del other_config['reasoning_effort']
+                    else:
+                        other_config['reasoning_effort'] = effort
+                    tampered = copy.deepcopy(first)
+                    tampered['data']['provenance']['provider_config_sha256'] = digest(other_config)
+                    with self.subTest(effort=effort), self.assertRaisesRegex(VerifierError, 'review_provenance_binding'):
+                        pipeline.dossier(intake, initial, reseal(tampered))

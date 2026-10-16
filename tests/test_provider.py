@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from llm_verifier.errors import InfrastructureError, VerifierError
-from llm_verifier.jsonutil import canonical, loads
+from llm_verifier.jsonutil import canonical, digest, loads
 from llm_verifier.provider import ENDPOINT, HttpResponse, HttpTransport, OpenAI, parse_response
 from tests.support import completion, example
 
@@ -188,7 +188,7 @@ class Provider(unittest.TestCase):
             self.assertNotIn('provider', request)
 
     def test_transient_retries_preserve_request_and_share_remaining_budget(self):
-        with example() as (_, effective, _):
+        with example(mutate=lambda c:c['provider'].update(reasoning_effort='high')) as (_, effective, _):
             for failure in (HttpResponse(429, b'PRIVATE'), HttpResponse(503, b'PRIVATE'), RuntimeError('PRIVATE')):
                 with self.subTest(failure=type(failure).__name__):
                     transport = Mock(); transport.request.side_effect = [failure, completion({})]
@@ -201,6 +201,7 @@ class Provider(unittest.TestCase):
                     self.assertEqual(provenance['elapsed_seconds'], 4)
                     calls = transport.request.call_args_list
                     self.assertEqual(calls[0].args[:2], calls[1].args[:2])
+                    self.assertEqual(loads(calls[0].args[0])['reasoning_effort'], 'high')
                     self.assertEqual([call.args[2] for call in calls], [10, 7])
                     sleeper.assert_called_once_with(.5)
 
@@ -234,3 +235,47 @@ class Provider(unittest.TestCase):
         self.assertEqual(provenance['request_id'], 'chatcmpl-test')
         self.assertEqual(provenance['usage'], {'prompt_tokens':100,'completion_tokens':50,'total_tokens':150})
         self.assertNotIn('PRIVATE', str(provenance))
+
+
+    def test_optional_effort_request_bytes_and_provider_config_hash(self):
+        messages = [{'role':'system', 'content':'rules'}]
+        schema = {'type':'object', 'properties':{}, 'required':[], 'additionalProperties':False}
+        with example() as (_, effective, _):
+            for response_format in ('json_schema', 'json_object'):
+                config = {**effective['config']['provider'], 'response_format':response_format}
+                expected = {'model':'test-model', 'messages':messages, 'max_completion_tokens':8192,
+                    'stream':False, 'n':1, 'store':False, 'response_format':{'type':response_format}}
+                if response_format == 'json_schema':
+                    expected['response_format']['json_schema'] = {
+                        'name':'llm_verifier_decision_v1', 'strict':True, 'schema':schema}
+                hashes = set()
+                for effort in (None, 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'):
+                    with self.subTest(response_format=response_format, effort=effort):
+                        settings = dict(config)
+                        request = copy.deepcopy(expected)
+                        if effort is not None:
+                            settings['reasoning_effort'] = effort
+                            request['reasoning_effort'] = effort
+                        transport = Mock(); transport.request.return_value = completion({})
+                        _, provenance = OpenAI(settings, transport=transport, api_key='test-key').review(
+                            messages, schema, 10, 1)
+                        transport.request.assert_called_once()
+                        body = transport.request.call_args.args[0]
+                        self.assertEqual(body, canonical(request))
+                        self.assertEqual(provenance['provider_config_sha256'], digest(settings))
+                        self.assertEqual(provenance['prompt_sha256'], digest(messages))
+                        self.assertEqual(provenance['schema_sha256'], digest(schema))
+                        self.assertEqual(provenance['endpoint'], ENDPOINT)
+                        hashes.add(provenance['provider_config_sha256'])
+                self.assertEqual(len(hashes), 8)
+
+    def test_effort_model_support_failure_does_not_downgrade(self):
+        with example(mutate=lambda c:c['provider'].update(model='gpt-6-astra', reasoning_effort='high')) as (_, effective, _):
+            transport = Mock(); transport.request.return_value = HttpResponse(400, b'PRIVATE')
+            provider = OpenAI(effective['config']['provider'], transport=transport, api_key='test-key')
+            with self.assertRaisesRegex(InfrastructureError, '^provider_http_failed$'):
+                provider.review([], {}, 10, 3)
+            transport.request.assert_called_once()
+            request = loads(transport.request.call_args.args[0])
+            self.assertEqual(request['model'], 'gpt-6-astra')
+            self.assertEqual(request['reasoning_effort'], 'high')

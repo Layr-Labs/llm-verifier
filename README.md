@@ -14,6 +14,8 @@ plumbing, not mathematical reliability. The internal repository is
 hosted execution. No live model calls, hosted Actions run, challenge import or
 deployment have been performed for this implementation.
 
+Every review applies the [shared external-evidence policy](docs/external-evidence.md).
+
 ## Install and try offline
 
 From this checkout:

@@ -22,7 +22,9 @@ controller receipt, copied runner, generated skill, or fixture generator.
 
 `check` validates the config, candidate snapshot, evidence references, checker
 bundles and known-answer cases. It executes no code or model. Unrelated authoring
-files and caches outside `submission/` are allowed. Keep protected config, rules
+files and caches outside `submission/` are allowed. It validates prior-result
+selector syntax locally; authenticated resolution occurs at evaluation intake,
+so ordinary editing and `check` need no platform credentials. Keep protected config, rules
 and checker files outside participant-editable paths. Repository access controls
 and the organizer's trusted checkout provide authority; this command is not a
 repository attestation or a restriction on an authoring agent's permissions.
@@ -86,7 +88,7 @@ For bound objectives the model returns `scores: null`. The verifier derives the
 complete tuple only when validity is true, all current sources are ready and
 every required canonical checker passes. Source digests bind the complete current
 snapshot; they are provenance, not claim-acceptance selectors. There is no partial
-objective acceptance or partial score records.
+objective acceptance, partial score record export or inheritance from prior results.
 
 If a bound source is absent, checker outputs conflict, a checker result is outside
 objective bounds or a required check is missing/failed, scores and score records
@@ -96,10 +98,11 @@ This is separate from mathematical rejection. Structured claim values outside
 protected bounds are rejected earlier by `check`, intake and artifact validation,
 as described above. They do not reach this unscored branch.
 
-Every review follows [atomic-claims-v1](atomic-claims.md). Declared claims must
+Every review follows [atomic-claims-v1](evidence-policy.md). Declared claims must
 include material assumptions, scope, parameters and nonstandard definitions for
-interpretation. Proof files contain the supporting argument. A narrower
-lemma belongs in a separate submission.
+interpretation and reuse. Proof files contain the supporting argument. A narrower
+lemma belongs in a separate submission. [Prior submissions](prior-results.md)
+supply only their exact declared claims, never current scores or checker passes.
 
 A maximizing proof claim can declare `"score": "positive_infinity"`. If accepted,
 its exact record is retained with `unsupported_positive_infinity` projection and
@@ -151,9 +154,13 @@ benchmark dispatch-only: Yukon dispatches evaluations explicitly, so a
 Rerun the generator after changing objectives or policies; `check` detects a stale manifest.
 Both workflow and source use the same supplied pin. Generated JSON is formatted
 for review. Configure reusable-workflow access and the checkout/model credentials
-as described in [workflow.md](workflow.md). The benchmark uses the existing separated execution/review jobs. Checker CI
-uses the shared `test-checkers.yml`: checkout and wheel preparation occur in one
-job; structural validation and production-runner checker cases run in a separate
-job without supplied secrets. It needs reusable-workflow access and, for private
-verifier checkout, a read-only `VERIFIER_CHECKOUT_TOKEN`, but no model credential. For local evaluation use the [independent phases](../README.md#independent-phases);
+as described in [workflow.md](workflow.md). The benchmark retains separated
+execution/review jobs, declares the separate `yukon_accepted_results` input and
+grants OIDC permission to its prepare job. No owner source registry, import
+allowlist or reference credential is needed. Checker CI uses the shared
+`test-checkers.yml`: checkout and wheel preparation occur in one job; structural
+validation and production-runner checker cases run in a separate job without
+supplied secrets. It needs reusable-workflow access and, for private verifier
+checkout, a read-only `VERIFIER_CHECKOUT_TOKEN`, but no model credential.
+For local evaluation use the [independent phases](../README.md#independent-phases);
 local `yukon run` does not orchestrate them.

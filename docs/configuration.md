@@ -187,3 +187,16 @@ conditionals, unions, regexes, defaults, coercion, extra keywords and additional
 properties are rejected. Property names are bounded strings. The reference
 JSON schemas describe structural shapes; executable validators additionally
 check this dialect, limits, source references and semantic bindings.
+
+## Scientific evidence and prior results
+
+`evidence_policy` is optional in authored config and always normalizes to
+`atomic-claims-v1`; any other value is rejected. This policy cannot be
+relaxed by challenge prose or selected instructions. Every judgment includes the
+[mandatory evidence report](evidence-policy.md).
+
+The submission may declare `prior_results` as up to 64 exact
+`{submission_id}` records. [Automatic resolution](prior-results.md)
+uses the trusted platform context at intake. There is no `prior_imports` config,
+candidate URL/file import, owner allowlist or reference-specific credential.
+Editable source checks validate selectors without resolving them.

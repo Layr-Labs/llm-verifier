@@ -14,7 +14,8 @@ valid=true means ALL original submission.claims are established as written.
 A claim source selects that index in the current submission; its evidence names
 immutable source files. A checker source selects the current canonical witness
 and objective semantics. The verifier derives a complete score tuple only when
-atomic validity and ALL current source/check gates permit it. No subset selection can authorize scoring. Missing/conflicting/bounded-out
+atomic validity and ALL current source/check gates permit it. No subset selection,
+prior score or prior witness can authorize scoring. Missing/conflicting/bounded-out
 sources leave scores unavailable; a valid unscored submission is allowed only when
 configured. Positive infinity retains exact records with null numeric scores
 because Yukon cannot order infinity.

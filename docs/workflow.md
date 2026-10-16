@@ -52,10 +52,16 @@ its repository's **Actions → General → Access** setting must also allow the
 caller repository. A checkout token does not grant reusable-workflow access;
 `llm-verifier check` validates local files, not these GitHub settings.
 
-The caller must declare string dispatch input `yukon_evaluation`; the wrapper
+The generated caller declares string dispatch input `yukon_evaluation`; the wrapper
 passes it to `YUKON_EVALUATION` at intake and snapshots the exact selected policies
 and fields. No artifact or credential is sent by the candidate. Protect all
 configuration and workflow paths in the Yukon manifest.
+
+The caller also declares and forwards the separate `yukon_accepted_results`
+context automatically. Only the reusable prepare job receives it and has
+`id-token: write`. Its killable 15-second transport exchanges GitHub OIDC for an
+immutable snapshot, with no owner reference credential or registration. Existing
+`yukon_evaluation` remains strict and unchanged. See [prior results](prior-results.md).
 
 The wrapper supports one challenge evaluation per workflow run. Do not call it
 multiple times in a matrix/run without adding organizer-controlled distinct
@@ -77,6 +83,9 @@ The only score upload is `benchmark-score`, containing exactly the manifest-rela
 intake context, stages it in a fresh directory outside the candidate checkout and
 uploads it once. The manifest sets `runner.scoreArtifactName` to `benchmark-score`.
 The dossier is a separate artifact; phase files do not have the score filename.
+`verifier-accepted-results` separately carries `accepted-results.json` and the
+platform snapshot receipt. Invalid judgments omit the bundle but retain the
+receipt; empty references still require a receipt for platform intakes.
 
 The example `setupCommand` and `benchmarkCommand` are phase descriptors for
 intake and finalization. **Local `yukon run` is unsupported in v0.2.** Yukon calls

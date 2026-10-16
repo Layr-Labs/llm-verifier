@@ -421,6 +421,11 @@
         ],
         "additionalProperties": false
       }
+    },
+    "evidence_policy": {
+      "type": "string",
+      "const": "atomic-claims-v1",
+      "description": "Mandatory shared policy; omission normalizes to this value, no opt-out."
     }
   },
   "required": [

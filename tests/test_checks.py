@@ -60,8 +60,6 @@ def decision(root, *, scores=(5,), valid=True):
     value = read_json(root / 'simulation.json')['initial_decision']
     value['judgment']['scores'] = list(scores) if scores is not None else None
     value['judgment']['valid'] = valid
-    if not valid:
-        value['judgment']['accepted_claims'] = []
     return value
 
 

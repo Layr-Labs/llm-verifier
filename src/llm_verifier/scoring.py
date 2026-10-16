@@ -1,4 +1,4 @@
-"""Deterministic scores from accepted snapshot claims or protected checker fields."""
+"""Deterministic current-source scores after atomic submission acceptance."""
 
 from fractions import Fraction
 import math
@@ -9,13 +9,16 @@ from .files import relative
 from .jsonutil import digest, integer, keys, text
 
 
-REVIEW_INSTRUCTIONS = """When score_gate contains bindings, return scores=null. Accept an exact binding
-claim_id only after verifying its complete claim under the rules. A claim source
-selects that index in submission.claims; its evidence names immutable source files.
-A checker source selects the canonical checked witness and objective semantics.
-The verifier derives scores from these acceptances. Accepting a separate lemma
-cannot score the main claim. An accepted positive_infinity record is retained in
-the dossier with null numeric scores because Yukon cannot order infinity.
+REVIEW_INSTRUCTIONS = """When score_gate contains bindings, return scores=null.
+valid=true means ALL original submission.claims are established as written.
+A claim source selects that index in the current submission; its evidence names
+immutable source files. A checker source selects the current canonical witness
+and objective semantics. The verifier derives a complete score tuple only when
+atomic validity and ALL current source/check gates permit it. No subset selection,
+prior score or prior witness can authorize scoring. Missing/conflicting/bounded-out
+sources leave scores unavailable; a valid unscored submission is allowed only when
+configured. Positive infinity retains exact records with null numeric scores
+because Yukon cannot order infinity.
 """
 
 def score_value(value):
@@ -128,7 +131,7 @@ def bindings(data, runs, required):
             continue
         # Binding the complete snapshot also includes every auxiliary file. No
         # participant-supplied digest or second copy of a proof is necessary.
-        claim_id = "claim:" + digest({"source": source, "files": digest(data["files"])})
+        source_sha256 = digest({"source": source, "files": digest(data["files"])})
         record, value, status = None, None, "unavailable"
         if "claim" in source:
             claims = data["manifest"]["claims"]
@@ -146,7 +149,7 @@ def bindings(data, runs, required):
                 else:
                     record = value = values[0]
                     status = score_bound_status(record, objective)
-        result.append({"objective": objective["name"], "source": source, "claim_id": claim_id,
+        result.append({"objective": objective["name"], "source": source, "source_sha256": source_sha256,
                        "status": status, "record": record, "value": value})
     return result
 
@@ -158,15 +161,11 @@ def project(judgment, gate, allow_unscored):
         return judgment, []
     if judgment["scores"] is not None:
         raise VerifierError("bound_scores_are_derived")
-    accepted = [b for b in bound if b["claim_id"] in judgment["accepted_claims"]]
-    if accepted and (not judgment["valid"] or not gate["satisfied"]
-                     or any(b["status"] != "ready" for b in accepted)):
-        raise VerifierError("accepted_score_source_unavailable")
-    complete = len(accepted) == len(bound)
+    complete = judgment["valid"] and gate["satisfied"] and all(b["status"] == "ready" for b in bound)
     if judgment["valid"] and not allow_unscored and not complete:
         raise VerifierError("scored_claim_required")
     scores = [b["value"] for b in bound] if complete and all(b["value"] is not None for b in bound) else None
-    records = [{"objective": b["objective"], "claim_id": b["claim_id"], "record": b["record"],
+    records = [{"objective": b["objective"], "source_sha256": b["source_sha256"], "record": b["record"],
                 "projection": "finite" if b["value"] is not None else "unsupported_positive_infinity"}
-               for b in accepted]
+               for b in bound] if complete else []
     return {**judgment, "scores": scores}, records

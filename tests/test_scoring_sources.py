@@ -29,12 +29,10 @@ def starter(change=None, configure=None):
         yield root,effective,intake_snapshot(effective,root/'submission')
 
 
-def verdict(intake,initial,accepted=None,scores=None,followup=None):
-    bound=score_gate(intake['data'],initial,followup)['bindings']
+def verdict(intake,initial,scores=None,followup=None,valid=True):
     return {'kind':'judgment','requests':[],'judgment':{
-        'valid':True,'scores':scores,'reason':'The exact scoped statement follows from the supplied evidence.',
-        'accepted_claims':[b['claim_id'] for b in bound] if accepted is None else accepted,
-        'assumptions':[],'unresolved_obligations':[],'evidence_refs':['source:proof.md'],
+        'valid':valid,'scores':scores,'reason':'Every original declared claim is established as written.' if valid else 'One declared claim is unsupported.',
+        'evidence_refs':['source:proof.md'],
         'review_standard':intake['data']['effective']['config']['review_standard']}}
 
 
@@ -61,32 +59,35 @@ class ScoringSources(unittest.TestCase):
             self.assertEqual(read_json(root/'score.json')['scores'],[0.5])
             self.assertEqual(report['data']['score_records'][0]['record'],{'numerator':'1','denominator':'2'})
 
-    def test_model_cannot_choose_scores_or_substitute_a_lemma(self):
+    def test_model_cannot_choose_scores_or_select_subset(self):
         with starter() as (_,_,intake):
             initial=pipeline.execute(intake)
             with self.assertRaisesRegex(VerifierError,'bound_scores_are_derived'):
                 judge(intake,initial,verdict(intake,initial,scores=[999]))
-            first=judge(intake,initial,verdict(intake,initial,accepted=['Only an auxiliary lemma.']))
+            partial=verdict(intake,initial)
+            partial['judgment']['accepted_claims']=['Only an auxiliary lemma.']
+            with self.assertRaises(VerifierError):judge(intake,initial,partial)
+            first=judge(intake,initial,verdict(intake,initial,valid=False))
             report=pipeline.dossier(intake,initial,first)
             self.assertIsNone(report['data']['judgment']['scores'])
             self.assertEqual(report['data']['score_records'],[])
-        with starter(configure=lambda c:c.update(allow_unscored=False)) as (_,_,intake):
+        with starter(change=lambda s:s.update(claims=['Only a lemma.']), configure=lambda c:c.update(allow_unscored=False)) as (_,_,intake):
             initial=pipeline.execute(intake)
             with self.assertRaisesRegex(VerifierError,'scored_claim_required'):
-                judge(intake,initial,verdict(intake,initial,accepted=['Only a lemma.']))
+                judge(intake,initial,verdict(intake,initial))
 
-    def test_proof_changes_invalidate_acceptance_and_resealed_numeric_reviews(self):
+    def test_proof_changes_bind_source_and_cannot_replay_old_review(self):
         with starter() as (root,effective,intake):
-            initial=pipeline.execute(intake); decision=verdict(intake,initial)
-            first=judge(intake,initial,decision)
-            first['data']['decision']['judgment']['scores']=[999]
+            initial=pipeline.execute(intake);first=judge(intake,initial,verdict(intake,initial))
+            modified=copy.deepcopy(first);modified['data']['decision']['judgment']['scores']=[999]
             with self.assertRaisesRegex(VerifierError,'bound_scores_are_derived'):
-                pipeline.dossier(intake,initial,reseal(first))
+                pipeline.dossier(intake,initial,reseal(modified))
             (root/'submission/proof.md').write_text('Changed proof.')
-            newer=intake_snapshot(effective,root/'submission'); runs=pipeline.execute(newer)
-            self.assertNotEqual(verdict(newer,runs)['judgment']['accepted_claims'],decision['judgment']['accepted_claims'])
-            review=judge(newer,runs,decision)
-            self.assertIsNone(pipeline.dossier(newer,runs,review)['data']['judgment']['scores'])
+            newer=intake_snapshot(effective,root/'submission');runs=pipeline.execute(newer)
+            self.assertNotEqual(score_gate(intake['data'],initial)['bindings'][0]['source_sha256'],
+                                score_gate(newer['data'],runs)['bindings'][0]['source_sha256'])
+            with self.assertRaisesRegex(VerifierError,'artifact_binding'):
+                pipeline.verify_initial_review(newer,runs,first)
 
     def test_long_proofs_use_snapshot_limits_without_chunking(self):
         with starter() as (root,effective,_):
@@ -122,7 +123,8 @@ class ScoringSources(unittest.TestCase):
             for output in ({'passed':False,'value':5},{'passed':True,'value':5}):
                 initial=initial_run(intake,result(output));d=verdict(intake,initial)
                 if not output['passed']:
-                    with self.assertRaisesRegex(VerifierError,'accepted_score_source_unavailable'):judge(intake,initial,d)
+                    first=judge(intake,initial,d)
+                    self.assertIsNone(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'])
                 else:
                     first=judge(intake,initial,d)
                     self.assertEqual(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'],[5])
@@ -136,8 +138,11 @@ class ScoringSources(unittest.TestCase):
                 first,extra=retry(root,intake,initial,{'n':n},result({'passed':True,'value':6}))
                 d=verdict(intake,initial,followup=extra)
                 if n==1:
-                    with scripted_model([d]),self.assertRaisesRegex(VerifierError,'accepted_score_source_unavailable'):
-                        pipeline.review(intake,initial,first,extra)
+                    with scripted_model([d]):last=pipeline.review(intake,initial,first,extra)
+                    report=pipeline.dossier(intake,initial,first,extra,last)['data']
+                    self.assertTrue(report['judgment']['valid'])
+                    self.assertIsNone(report['judgment']['scores'])
+                    self.assertEqual(report['score_records'],[])
                 else:
                     with scripted_model([d]):last=pipeline.review(intake,initial,first,extra)
                     self.assertEqual(pipeline.dossier(intake,initial,first,extra,last)['data']['judgment']['scores'],[5])
@@ -193,7 +198,7 @@ class ScoreMinimum(unittest.TestCase):
                 self.assertEqual(data['score_records'][0]['record'],score)
         with starter(change=lambda s:s.update(claims=['An unscored partial lemma.']),configure=self.zero) as (_,_,intake):
             initial=pipeline.execute(intake)
-            first=judge(intake,initial,verdict(intake,initial,accepted=['An unscored partial lemma.']))
+            first=judge(intake,initial,verdict(intake,initial))
             self.assertIsNone(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'])
 
     def test_minimum_is_exact_and_unconstrained_negative_scores_still_work(self):
@@ -218,9 +223,7 @@ class ScoreMinimum(unittest.TestCase):
                 decision=verdict(intake,initial)
                 if value==5:
                     self.assertEqual(score_gate(intake['data'],initial)['bindings'][0]['status'],'below_minimum')
-                    with self.assertRaisesRegex(VerifierError,'accepted_score_source_unavailable'):
-                        judge(intake,initial,decision)
-                    first=judge(intake,initial,verdict(intake,initial,accepted=['Only an auxiliary lemma.']))
+                    first=judge(intake,initial,decision)
                     self.assertIsNone(pipeline.dossier(intake,initial,first)['data']['judgment']['scores'])
                 else:
                     first=judge(intake,initial,decision)
@@ -280,7 +283,7 @@ class ScoreMaximum(unittest.TestCase):
                 self.assertEqual(dossier['data']['score_records'][0]['record'], value)
         with starter(change=lambda s: s.update(claims=['A partial lemma.']), configure=configure) as (_, _, intake):
             initial = pipeline.execute(intake)
-            first = judge(intake, initial, verdict(intake, initial, accepted=['A partial lemma.']))
+            first = judge(intake, initial, verdict(intake, initial))
             self.assertIsNone(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'])
 
     def test_checker_above_maximum_cannot_score_but_can_remain_unscored(self):
@@ -292,9 +295,7 @@ class ScoreMaximum(unittest.TestCase):
                 initial = initial_run(intake, result({'passed': True, 'value': value}))
                 if value == 6:
                     self.assertEqual(score_gate(intake['data'], initial)['bindings'][0]['status'], 'above_maximum')
-                    with self.assertRaisesRegex(VerifierError, 'accepted_score_source_unavailable'):
-                        judge(intake, initial, verdict(intake, initial))
-                    first = judge(intake, initial, verdict(intake, initial, accepted=['An auxiliary lemma.']))
+                    first = judge(intake, initial, verdict(intake, initial))
                     self.assertIsNone(pipeline.dossier(intake, initial, first)['data']['judgment']['scores'])
                 else:
                     first = judge(intake, initial, verdict(intake, initial))

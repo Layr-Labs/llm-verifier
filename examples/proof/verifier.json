@@ -34,7 +34,7 @@
         "selector": {
           "version": "scoped-claims-v1"
         },
-        "instructions": "Check the exact scope of accepted claims. State assumptions and unresolved obligations. A standalone relevant lemma may be valid without proving the full challenge."
+        "instructions": "Establish every declared claim exactly as written. Explain any missing premise in reason. A standalone lemma may be submitted as the entire declared set."
       }
     ]
   },

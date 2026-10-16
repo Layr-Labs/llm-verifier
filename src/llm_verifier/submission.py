@@ -5,6 +5,7 @@ from .errors import VerifierError
 from .files import relative, validate_files
 from .input_schema import validate_schema, validate_value
 from .scoring import validate_claim
+from .prior import references
 from .jsonutil import canonical, keys, loads, text
 
 
@@ -13,7 +14,7 @@ def manifest_from(files, limits, checkers=()):
     if "submission.json" not in files:
         raise VerifierError("missing_submission_manifest")
     manifest = loads(files["submission.json"]["text"])
-    keys(manifest, {"version", "title", "claims", "experiments"}, {"checks"})
+    keys(manifest, {"version", "title", "claims", "experiments"}, {"checks", "prior_results"})
     if type(manifest["version"]) is not int or manifest["version"] != 1:
         raise VerifierError("unsupported_submission_version")
     text(manifest["title"], 300)
@@ -57,6 +58,7 @@ def manifest_from(files, limits, checkers=()):
             raise VerifierError("duplicate_declared_check")
         declared.add(check["check"])
         validate_value(registry[check["check"]]["input_schema"], check["inputs"])
+    references(manifest.get("prior_results", []))
     plan = initial_plan(manifest)
     check_budget(plan, limits, "initial")
     return manifest

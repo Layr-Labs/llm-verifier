@@ -50,7 +50,8 @@ def prepare(args):
                "workflow_content_sha256": sha((Path(args.verifier_checkout) / ".github/workflows/verify.yml").read_bytes())}
     if not re.fullmatch(r"[0-9]+:[0-9]+", args.run_id):
         raise VerifierError("workflow_run_identity")
-    intake = intake_snapshot(effective, root / submission, context)
+    intake = intake_snapshot(effective, root / submission, context,
+                             accepted_results_context=loads(args.accepted_results_context, 16384) if args.accepted_results_context else None)
     write_json(args.out, intake)
     github_output("intake_sha256", intake["sha256"])
     return intake

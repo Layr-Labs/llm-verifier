@@ -55,7 +55,9 @@ source. Every phase verifies the embedded inputs, its exact predecessor digests,
 and the current verifier's content hash. Duplicate JSON structures compare canonical
 bytes, so integers, floats and booleans cannot substitute for one another. Model provenance binds exact prompt and
 schema hashes, configured/returned model, request ID if present, numeric usage,
-attempt count, elapsed time and routing policy.
+attempt count, elapsed time and the fixed OpenAI endpoint. No routing metadata is
+retained. `request_id` records the completion envelope ID when present, not an HTTP
+header.
 
 Local provenance records hashes of **all installed package `.py` files**, not
 an unrelated/bootstrap Git SHA. Local revisions are unasserted. Hosted provenance
@@ -104,7 +106,7 @@ absence or fails infrastructure. There is no unsandboxed fallback.
 
 ## Provider boundaries
 
-Only the review job has `OPENROUTER_API_KEY`. Rules, checker descriptors/schemas
+Only the review job has `OPENAI_API_KEY`. Rules, checker descriptors/schemas
 and the derived score gate are in the system message;
 full submission files and captured evidence are user-message data. Protected checker source bytes are retained in intake/dossier, not sent to the
 model. No candidate source or captured evidence is hidden to fit context: the exact serialized full prompt must fit the
@@ -120,8 +122,11 @@ Only transport failures, HTTP 429 and 5xx get bounded retries. Malformed, refuse
 truncated, tool-call, multi-choice, error-bearing or semantically invalid responses
 fail without repair; valid rejections are never retried. HTTP error bodies,
 exception text, arbitrary usage metadata, headers and raw provider errors are not
-published. OpenRouter configuration and native schema compatibility are explicit,
-with no model/provider fallback.
+published. OpenAI configuration and native schema compatibility are explicit,
+with no model/provider fallback. Only a non-streaming `chat.completion` envelope
+with one assistant text choice, `finish_reason: "stop"`, and no non-null refusal
+is eligible for local judgment validation. Requests explicitly send `store: false`;
+see [configuration and retention controls](configuration.md#provider-configuration).
 
 ## Yukon projection
 

@@ -34,6 +34,7 @@ def registered(*, config_change=None, manifest_change=None, evaluation=None):
         (root / 'protected/check.py').write_text('import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({"passed":x["n"] == 1}))\n')
         write_json(root / 'protected/params.json', {'target': 'protected'})
         config = read_json(root / 'verifier.json')
+        config['provider']['model'] = 'test-model'
         config['limits'] = {'max_followups': 3}
         config['checkers'] = [{
             'id': 'witness', 'description': 'Checks the fixed witness predicate.',
@@ -517,7 +518,7 @@ marker=Path('/tmp/prior-run')
 fresh=not marker.exists()
 marker.write_text('only this invocation')
 files=sorted(str(p.relative_to('/snapshot/files')) for p in Path('/snapshot/files').rglob('*') if p.is_file())
-print(json.dumps({'passed':readonly and fresh and os.getuid()==65534 and os.environ.get('OPENROUTER_API_KEY') is None and not Path('/var/run/docker.sock').exists() and [i[1] for i in socket.if_nameindex()]==['lo'] and files==['protected/check.py','protected/params.json']}))
+print(json.dumps({'passed':readonly and fresh and os.getuid()==65534 and os.environ.get('OPENAI_API_KEY') is None and not Path('/var/run/docker.sock').exists() and [i[1] for i in socket.if_nameindex()]==['lo'] and files==['protected/check.py','protected/params.json']}))
 '''
             (root/'protected/check.py').write_text(source)
             (root/'submission/json.py').write_text('raise RuntimeError("candidate import")')
@@ -525,7 +526,7 @@ print(json.dumps({'passed':readonly and fresh and os.getuid()==65534 and os.envi
             (root/'hostfile').write_text('not mounted')
             effective=load_config(root,'verifier.json','submission')
             intake=intake_snapshot(effective,root/'submission')
-            with patch.dict(os.environ, {'OPENROUTER_API_KEY':'not-a-real-secret-do-not-inherit'}):
+            with patch.dict(os.environ, {'OPENAI_API_KEY':'not-a-real-secret-do-not-inherit'}):
                 initial=pipeline.execute(intake)
             self.assertTrue(initial['data']['runs'][0]['check_validation']['passed'])
             req={'kind':'followup','judgment':None,'requests':[{'check':'witness','inputs':{'n':1},'reason':'verify fresh tmp'}]}

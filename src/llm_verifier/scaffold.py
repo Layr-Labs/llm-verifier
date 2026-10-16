@@ -25,7 +25,7 @@ def formatted(value):
 
 def initialize(output, name, model):
     identifier(name)
-    if model == "ORGANIZER/MODEL":
+    if model == "SELECT_OPENAI_MODEL":
         raise VerifierError("explicit_model_required")
     output = Path(os.path.abspath(output))
     with directory_fd(output.parent):
@@ -126,7 +126,7 @@ def github(root, repository, revision):
 
 
 def test_checkers(root, *, runner=None):
-    if os.environ.get("OPENROUTER_API_KEY"):
+    if os.environ.get("OPENAI_API_KEY"):
         raise VerifierError("checker_execution_requires_credential_free_process")
     effective = load_config(root, "verifier.json", "submission")
     cases = checker_cases(root, effective)

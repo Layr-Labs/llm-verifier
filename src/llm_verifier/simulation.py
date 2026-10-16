@@ -30,7 +30,7 @@ class ScriptedProvider:
 
     def review(self, messages, schema, seconds, requests):
         return self.decision, {"provider": "simulation", "endpoint": "none", "configured_model": self.config["model"],
-            "returned_model": "simulation/scripted", "request_id": None, "usage": {}, "routing": {},
+            "returned_model": "simulation-scripted", "request_id": None, "usage": {},
             "prompt_sha256": digest(messages), "schema_sha256": digest(schema),
             "provider_config_sha256": digest(self.config), "attempts": 1, "elapsed_seconds": 0}
 

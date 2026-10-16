@@ -12,7 +12,7 @@ out the verifier at an explicit full SHA, both with `persist-credentials: false`
 It builds a wheel once, then passes it and inert intake through same-run artifacts.
 Execution jobs receive no supplied secrets or checkout tokens; Docker receives an
 explicit minimal environment and no GitHub artifact credentials. Only the two
-review steps receive the OpenRouter secret, and neither executes candidates.
+review steps receive the OpenAI secret, and neither executes candidates.
 
 ## Pins and availability
 
@@ -45,7 +45,7 @@ for its source. Configure repository access before running it.
 The placeholders are not deployable commit hashes. Set the
 protected `root_dir` to the imported leaf path (or `.`), and use config/submission/
 score paths relative to that root. The examples' manifests refer to this filename.
-Configure `OPENROUTER_API_KEY`, and `VERIFIER_CHECKOUT_TOKEN` only if a separate
+Configure `OPENAI_API_KEY`, and `VERIFIER_CHECKOUT_TOKEN` only if a separate
 private or internal verifier repository needs access; the caller's default token
 may not have cross-repository access. For a private/internal reusable workflow,
 its repository's **Actions → General → Access** setting must also allow the
@@ -92,7 +92,7 @@ and requested follow-up branches.
 Official references checked for this implementation:
 
 - [GitHub job context workflow identity](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#example-usage-of-job-context-workflow-identity)
-- [OpenRouter API overview](https://openrouter.ai/docs/api_reference/overview)
+- [OpenAI Chat Completions](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
 
 Yukon compatibility was checked against the supplied `pareto-mode.md` and
 `github-actions-benchmark-author-guide.md` source checkout. Parent independently

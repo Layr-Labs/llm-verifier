@@ -43,7 +43,7 @@
     ]
   },
   "provider": {
-    "model": "ORGANIZER/MODEL",
+    "model": "SELECT_OPENAI_MODEL",
     "response_format": "json_schema"
   },
   "limits": {

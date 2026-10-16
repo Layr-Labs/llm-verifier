@@ -25,16 +25,17 @@ def example(name='proof', mutate=None, evaluation=None):
     with tempfile.TemporaryDirectory() as tmp:
         root=Path(tmp)/'challenge'
         shutil.copytree(REPO/'examples'/name,root)
+        raw=json.loads((root/'verifier.json').read_text())
+        raw['provider']['model']='test-model'
         if mutate:
-            raw=json.loads((root/'verifier.json').read_text())
             mutate(raw)
-            (root/'verifier.json').write_text(json.dumps(raw))
+        (root/'verifier.json').write_text(json.dumps(raw))
         effective=load_config(root,'verifier.json','submission',evaluation)
         yield root, effective, intake_snapshot(effective,root/'submission')
 
 
 def completion(decision, **updates):
-    value={'id':'gen-test','model':'test/model','choices':[{'finish_reason':'stop','message':{'role':'assistant','content':json.dumps(decision)}}], 'usage':{'prompt_tokens':100,'completion_tokens':50,'total_tokens':150}}
+    value={'id':'chatcmpl-test','object':'chat.completion','model':'test-model','choices':[{'finish_reason':'stop','message':{'role':'assistant','content':json.dumps(decision)}}], 'usage':{'prompt_tokens':100,'completion_tokens':50,'total_tokens':150}}
     value.update(updates)
     return HttpResponse(200,canonical(value))
 
@@ -43,7 +44,7 @@ def completion(decision, **updates):
 def scripted_model(decisions):
     # Mock only the trusted network boundary, never production provider choice.
     responses=iter([completion(d) for d in decisions])
-    with patch.dict('os.environ',{'OPENROUTER_API_KEY':'never-real-test-key'}), patch.object(HttpTransport,'request',side_effect=lambda *a: next(responses)):
+    with patch.dict('os.environ',{'OPENAI_API_KEY':'never-real-test-key'}), patch.object(HttpTransport,'request',side_effect=lambda *a: next(responses)):
         yield
 
 

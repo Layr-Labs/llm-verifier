@@ -18,6 +18,6 @@
     "scoring": [{"selector": {}, "instructions": "Use the configured score source."}],
     "validity": [{"selector": {}, "instructions": "Apply rules.md to the complete claim and proof."}]
   },
-  "provider": {"model": "ORGANIZER/MODEL"},
+  "provider": {"model": "SELECT_OPENAI_MODEL"},
   "limits": {"max_followups": 0}
 }

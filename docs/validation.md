@@ -90,3 +90,32 @@ performed.
 The gate verifies a scoped predicate, not arbitrary objective values or broader
 mathematical claims. Local `yukon run` and every non-null admission policy remain
 unsupported. See [protected checks](checkers.md) for the exact limits.
+
+## Direct OpenAI migration (2026-10-16)
+
+Provider-only validation from published master
+`f1b9cd862e0b034e89267b88e301b583305c7289`:
+
+- Python 3.13.1 source suite: 124 discovered, 119 passed and five gated Docker
+  skips. A fresh wheel installation, with `PYTHONPATH` removed and
+  `LLMV_DOCKER_INTEGRATION=1`, passed all 124 tests with no skips.
+- Mocked direct Chat Completions requests check the fixed OpenAI endpoint and
+  headers, `max_completion_tokens`, `store: false`, explicit response formats,
+  native model IDs, credential selection, strict response/refusal handling,
+  redaction, retries, aggregate deadlines and nonpublishable injected transports.
+  Existing localhost trickle tests exercise the killable HTTP worker.
+- Real Docker tests use the existing pinned image and verify that
+  `OPENAI_API_KEY` never enters candidate or checker containers, alongside the
+  existing network, filesystem, output and timeout boundaries.
+- Wheel and source distribution build successfully. Installed runtime/template
+  bytes match source; `pip check`, all four offline example branches, and
+  installed `init`/`check`/`github` smoke checks pass.
+- `actionlint` 1.7.12 accepts all three implementation workflows and both generated
+  callers. An independent JSON Schema validator accepts all four source configs
+  and rejects 36 obsolete/invalid provider variants. Local README/docs links and
+  `git diff --check` pass.
+
+These tests use mocked model responses. No live or paid OpenAI request, hosted
+workflow dispatch, model qualification or challenge rollout is part of this
+validation. The earlier validation records above describe their historical
+implementation and remain unchanged. Atomic acceptance integration is separate.

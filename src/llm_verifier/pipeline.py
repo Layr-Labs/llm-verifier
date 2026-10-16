@@ -9,7 +9,7 @@ from .errors import InfrastructureError, VerifierError
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
-from .provider import OpenRouter
+from .provider import ENDPOINT, OpenAI
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
 from .scoring import REVIEW_INSTRUCTIONS, project
@@ -198,11 +198,11 @@ def _verify_review(intake, initial, review, initial_review=None, followup=None):
         projected, _ = project(value["decision"]["judgment"], gate, config["allow_unscored"])
         enforce_score_gate(projected, gate)
     provenance = value["provenance"]
-    required = {"provider", "endpoint", "configured_model", "returned_model", "request_id", "usage", "prompt_sha256", "schema_sha256", "provider_config_sha256", "attempts", "elapsed_seconds", "routing"}
+    required = {"provider", "endpoint", "configured_model", "returned_model", "request_id", "usage", "prompt_sha256", "schema_sha256", "provider_config_sha256", "attempts", "elapsed_seconds"}
     keys(provenance, required)
     if provenance["prompt_sha256"] != digest(messages) or provenance["schema_sha256"] != digest(schema) or provenance["provider_config_sha256"] != digest(config["provider"]) or provenance["configured_model"] != config["provider"]["model"]:
         raise VerifierError("review_provenance_binding")
-    if not review["simulation"] and provenance["provider"] != "openrouter":
+    if not review["simulation"] and (provenance["provider"] != "openai" or provenance["endpoint"] != ENDPOINT):
         raise VerifierError("untrusted_provider_provenance")
     integer(provenance["attempts"], 1, config["provider"]["max_attempts"])
     number(provenance["elapsed_seconds"], 0, config["limits"]["total_review_seconds"])
@@ -238,10 +238,10 @@ def review(intake, initial, initial_review=None, followup=None, *, provider=None
     requests = config["limits"]["total_provider_requests"] - prior["attempts"]
     if seconds <= 0 or requests <= 0:
         raise InfrastructureError("review_budget_exhausted")
-    provider = provider or OpenRouter(config["provider"])
+    provider = provider or OpenAI(config["provider"])
     decision, provenance = provider.review(messages, schema, seconds, requests)
     validate_decision(decision, config, data["manifest"], refs, len(initial["data"]["runs"]), final=final)
-    simulation = any(p["simulation"] for p in parents) or type(provider) is not OpenRouter or provider.simulation
+    simulation = any(p["simulation"] for p in parents) or type(provider) is not OpenAI or provider.simulation
     result = seal("final_review" if final else "initial_review", intake["bindings"], {"decision": decision, "provenance": provenance},
                   [p["sha256"] for p in parents], simulation)
     _verify_review(intake, initial, result, initial_review, followup)

@@ -99,7 +99,7 @@ class Workflow(unittest.TestCase):
         self.assertNotIn('test-checkers --root',prepare)
         self.assertNotIn('secrets.',execution)
         self.assertNotIn('actions/checkout',execution)
-        self.assertNotIn('OPENROUTER',text)
+        self.assertNotIn('OPENAI_API_KEY',text)
         self.assertNotIn('pull_request_target',text)
         self.assertIn('permissions: {}',execution)
         self.assertIn('env -i PATH="$PATH" "$cli" test-checkers --root "$root"',execution)
@@ -113,3 +113,20 @@ class Workflow(unittest.TestCase):
             if line.startswith('        run: |'):in_run=True
             elif in_run and line and not line.startswith('          '):in_run=False
             if in_run:self.assertNotIn('${{',line)
+
+
+    def test_openai_secret_is_confined_to_review_steps_and_forwarded_by_caller(self):
+        text = (REPO/'.github/workflows/verify.yml').read_text()
+        jobs = re.split(r'^  ([a-z_]+):$', text.split('jobs:',1)[1], flags=re.MULTILINE)
+        seen = set()
+        for name, body in zip(jobs[1::2], jobs[2::2]):
+            if 'OPENAI_API_KEY' in body:
+                seen.add(name)
+                self.assertEqual(body.count('OPENAI_API_KEY:'), 1)
+                self.assertNotIn('llm-verifier experiments', body)
+                self.assertNotIn('llm-verifier followup', body)
+                self.assertNotIn('actions/checkout', body)
+        self.assertEqual(seen, {'initial_review','final_review'})
+        caller = (REPO/'src/llm_verifier/templates/benchmark.yml').read_text()
+        self.assertIn('OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}', caller)
+        self.assertNotIn('OPENROUTER', text + caller)

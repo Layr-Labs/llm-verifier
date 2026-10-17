@@ -118,7 +118,7 @@ def normalize(raw):
     keys(runtime, {"image", "platform"})
     if type(runtime["image"]) is not str or not IMAGE.fullmatch(runtime["image"]) or runtime["platform"] != "linux/amd64":
         raise VerifierError("pinned_python_runtime_required")
-    keys(raw["provider"], {"model"}, set(PROVIDER_DEFAULTS) | {"reasoning_effort"})
+    keys(raw["provider"], {"model"}, set(PROVIDER_DEFAULTS) | {"reasoning_effort", "stream"})
     provider = {**PROVIDER_DEFAULTS, **raw["provider"]}
     # No fallback aliases, list of models or implicitly selected user defaults.
     if (type(provider["model"]) is not str
@@ -130,6 +130,8 @@ def normalize(raw):
     integer(provider["max_attempts"], 1, 3)
     integer(provider["max_response_bytes"], 1024, 1048576)
     if provider["response_format"] not in ("json_schema", "json_object"):
+        raise VerifierError("provider_settings")
+    if "stream" in provider and type(provider["stream"]) is not bool:
         raise VerifierError("provider_settings")
     if "reasoning_effort" in provider and (
         type(provider["reasoning_effort"]) is not str

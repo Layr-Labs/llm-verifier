@@ -219,6 +219,10 @@
             "json_object"
           ],
           "default": "json_schema"
+        },
+        "stream": {
+          "type": "boolean",
+          "description": "Opt in to bounded SSE assembly; omission preserves non-streaming requests."
         }
       },
       "required": [

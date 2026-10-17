@@ -132,8 +132,7 @@ CircuitBreaker must explicitly configure `"model": "gpt-6-astra"` and
 starter selects neither a model nor an effort default.
 
 See the [OpenAI request reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
-and the local reference schema for bounds. Each request sends `n: 1`,
-`stream: false`, and `store: false`. It sends no tools, sampling overrides, routing
+and the local reference schema for bounds. Each request sends `n: 1` and `store: false`. Streaming defaults to false. It sends no tools, sampling overrides, routing
 policy or attribution headers. `store: false` disables stored completions; it does
 not establish an account-level zero-retention guarantee or disable abuse monitoring.
 Organizers manage those controls with OpenAI separately; see
@@ -214,3 +213,19 @@ replace spaces). These categories reveal neither response text nor credentials.
 In particular, `provider_response_invalid_output_token_limit` means the single
 choice ended with `finish_reason: "length"`. It is an infrastructure failure;
 no partial decision is accepted and no semantic repair retry is performed.
+
+
+An organizer may explicitly set provider.stream to true for long reasoning
+requests. This sends stream=true and stream_options.include_usage=true to the
+same fixed Chat Completions endpoint, retaining store=false, the configured
+model/effort, schema and all wall/request limits. Omission preserves historical
+request bytes. There is no storage-based background request or alternate model.
+
+The private worker bounds SSE wire bytes to 16 times max_response_bytes (at most
+16 MiB), and bounds the reassembled completion to max_response_bytes. It accepts
+one consistent response identity and choice, assistant text only, a finish event,
+a final usage event and [DONE]. It ignores SSE comments/keepalives but rejects
+refusals, tool calls, ambiguous identities, malformed or incomplete streams.
+Only a complete reassembled response reaches the existing strict decision parser.
+Malformed streams fail without semantic retry. A closed HTTP connection reports
+provider_connection_closed; arbitrary socket/provider exception text is discarded.

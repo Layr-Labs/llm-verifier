@@ -125,7 +125,7 @@ class Provider(unittest.TestCase):
         import socket
         import threading
         import llm_verifier.provider as module
-        for phase in ('headers','body'):
+        for phase in ('headers','body','stream'):
             with self.subTest(phase=phase):
                 listener=socket.socket();listener.settimeout(2);listener.bind(('127.0.0.1',0));listener.listen(1)
                 port=listener.getsockname()[1]
@@ -138,8 +138,11 @@ class Provider(unittest.TestCase):
                                 if phase=='headers':
                                     outgoing=b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}'
                                 else:
-                                    client.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 200\r\n\r\n')
-                                    outgoing=b'x'*200
+                                    headers=b'HTTP/1.1 200 OK\r\nContent-Length: 200\r\n'
+                                    if phase=='stream':
+                                        headers+=b'Content-Type: text/event-stream\r\n'
+                                    client.sendall(headers+b'\r\n')
+                                    outgoing=(b':x\n\n'*50) if phase=='stream' else b'x'*200
                                 for byte in outgoing:
                                     client.sendall(bytes([byte]));time.sleep(.025)
                     except OSError:
@@ -153,7 +156,8 @@ class Provider(unittest.TestCase):
                            "p._http_worker()")
                 started=time.monotonic()
                 with patch.object(module,'_CHILD_BOOTSTRAP',bootstrap),self.assertRaisesRegex(InfrastructureError,'^provider_timeout$'):
-                    HttpTransport().request(b'{}','not-a-real-key',.15,1024)
+                    body=b'{"stream":true}' if phase=='stream' else b'{}'
+                    HttpTransport().request(body,'not-a-real-key',.15,1024)
                 self.assertLess(time.monotonic()-started,.7)
                 thread.join(timeout=2)
                 self.assertFalse(thread.is_alive())

@@ -11,14 +11,18 @@ import sys
 import time
 
 from .errors import InfrastructureError, VerifierError
+from .background import ENDPOINT as BACKGROUND_ENDPOINT, ERRORS as BACKGROUND_ERRORS, request_background
 from .jsonutil import canonical, digest, loads
-from .streaming import WIRE_MULTIPLIER, assemble_stream
 
 ENDPOINT = "https://api.openai.com/v1/chat/completions"
-# One credentialed job must remain below the hosted 15-minute job deadline.
-MAX_REVIEW_SECONDS = 600
+# One credentialed job must remain below the hosted 30-minute job deadline.
+MAX_REVIEW_SECONDS = 1200
 TRANSPORT_ERRORS = frozenset({"provider_timeout", "provider_response_limit", "provider_transport_failed",
-                              "provider_connection_closed", "provider_stream_invalid"})
+                              "provider_connection_closed"}) | BACKGROUND_ERRORS
+
+
+def provider_endpoint(config):
+    return BACKGROUND_ENDPOINT if config.get("background", False) else ENDPOINT
 
 
 @dataclass
@@ -28,25 +32,20 @@ class HttpResponse:
 
 
 class HttpTransport:
-    def _request_in_child(self, body, api_key, timeout, limit):
+    def _request_in_child(self, body, api_key, timeout, limit, *, method="POST", path="/v1/chat/completions"):
         # http.client does not automatically follow redirects (unlike urlopen).
         # Each read updates the socket timeout to the remaining wall budget.
         deadline = time.monotonic() + timeout
-        streaming = loads(body, limit=16 * 1024 * 1024).get("stream") is True
-        wire_limit = limit * WIRE_MULTIPLIER if streaming else limit
         conn = http.client.HTTPSConnection("api.openai.com", timeout=timeout)
         response = None
         try:
-            conn.request("POST", "/v1/chat/completions", body=body,
+            conn.request(method, path, body=body,
                          headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json",
-                                  "Accept": "text/event-stream" if streaming else "application/json",
-                                  "User-Agent": "llm-verifier/0.1"})
+                                  "Accept": "application/json", "User-Agent": "llm-verifier/0.1"})
             response = conn.getresponse()
             if response.status != 200:
                 # Do not read arbitrary provider error messages at all.
                 return HttpResponse(response.status, b"")
-            if streaming and response.getheader("Content-Type", "").split(";", 1)[0].strip().lower() != "text/event-stream":
-                raise InfrastructureError("provider_stream_invalid")
             output = bytearray()
             while True:
                 remaining = deadline - time.monotonic()
@@ -56,13 +55,12 @@ class HttpTransport:
                     conn.sock.settimeout(remaining)
                 elif response.fp is not None:
                     response.fp.raw._sock.settimeout(remaining)
-                chunk = response.read1(min(65536, wire_limit + 1 - len(output)))
+                chunk = response.read1(min(65536, limit + 1 - len(output)))
                 output.extend(chunk)
-                if len(output) > wire_limit:
+                if len(output) > limit:
                     raise InfrastructureError("provider_response_limit")
                 if not chunk:
-                    completed = assemble_stream(bytes(output), limit) if streaming else bytes(output)
-                    return HttpResponse(response.status, completed)
+                    return HttpResponse(response.status, bytes(output))
         except InfrastructureError:
             raise
         except TimeoutError:
@@ -134,7 +132,12 @@ def _http_worker():
         body = sys.stdin.buffer.read(16 * 1024 * 1024 + 1)
         if len(body) > 16 * 1024 * 1024:
             raise ValueError()
-        response = HttpTransport()._request_in_child(body, metadata["key"], metadata["timeout"], metadata["limit"])
+        transport = HttpTransport()
+        if loads(body, limit=16 * 1024 * 1024).get("background") is True:
+            response = HttpResponse(*request_background(body, metadata["key"], metadata["timeout"],
+                                                       metadata["limit"], transport._request_in_child))
+        else:
+            response = transport._request_in_child(body, metadata["key"], metadata["timeout"], metadata["limit"])
         sys.stdout.buffer.write(str(response.status).encode() + b"\n" + response.body)
         sys.stdout.buffer.flush()
     except InfrastructureError as exc:
@@ -228,13 +231,22 @@ class OpenAI:
             response_format["json_schema"] = {"name": "llm_verifier_decision_v1", "strict": True, "schema": schema}
         request = {"model": config["model"], "messages": messages,
                    "max_completion_tokens": config["max_completion_tokens"],
-                   "stream": config.get("stream", False), "n": 1, "store": False,
+                   "stream": False, "n": 1, "store": False,
                    "response_format": response_format}
-        if request["stream"]:
-            request["stream_options"] = {"include_usage": True}
         # Omission preserves historical request bytes and provider defaults.
         if "reasoning_effort" in config:
             request["reasoning_effort"] = config["reasoning_effort"]
+        endpoint = provider_endpoint(config)
+        if config.get("background", False):
+            native_format = {"type": config["response_format"]}
+            if config["response_format"] == "json_schema":
+                native_format.update(name="llm_verifier_decision_v1", strict=True, schema=schema)
+            request = {"model": config["model"], "input": messages, "max_output_tokens": config["max_completion_tokens"],
+                       "background": True, "stream": False, "store": False, "truncation": "disabled",
+                       "text": {"format": native_format}}
+            if "reasoning_effort" in config:
+                request["reasoning"] = {"effort": config["reasoning_effort"]}
+            endpoint = BACKGROUND_ENDPOINT
         body = canonical(request)
         seconds = min(seconds, MAX_REVIEW_SECONDS)
         started = time.monotonic()
@@ -250,7 +262,7 @@ class OpenAI:
             except InfrastructureError as exc:
                 # Preserve only known static categories, never arbitrary text.
                 if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
-                    if exc.args[0] in {"provider_response_limit", "provider_stream_invalid"}:
+                    if exc.args[0] == "provider_response_limit" or exc.args[0] in BACKGROUND_ERRORS:
                         raise
                     last_failure = exc.args[0]
                 else:
@@ -265,7 +277,7 @@ class OpenAI:
                     elapsed = time.monotonic() - started
                     if elapsed > seconds:
                         raise InfrastructureError("provider_time_budget")
-                    metadata.update(provider="openai", endpoint=ENDPOINT,
+                    metadata.update(provider="openai", endpoint=endpoint,
                                     prompt_sha256=digest(messages), schema_sha256=digest(schema),
                                     provider_config_sha256=digest(config), attempts=attempt,
                                     elapsed_seconds=elapsed)

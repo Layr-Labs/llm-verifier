@@ -198,7 +198,7 @@
         "timeout_seconds": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 600,
+          "maximum": 1200,
           "default": 60
         },
         "max_attempts": {
@@ -220,9 +220,9 @@
           ],
           "default": "json_schema"
         },
-        "stream": {
+        "background": {
           "type": "boolean",
-          "description": "Opt in to bounded SSE assembly; omission preserves non-streaming requests."
+          "description": "Opt in to bounded Responses background polling with store=false."
         }
       },
       "required": [
@@ -356,7 +356,7 @@
           "type": "integer",
           "default": 180,
           "minimum": 1,
-          "maximum": 1200
+          "maximum": 2400
         },
         "total_provider_requests": {
           "type": "integer",

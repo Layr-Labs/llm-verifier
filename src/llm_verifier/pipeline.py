@@ -10,7 +10,7 @@ from .evidence import POLICY
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
-from .provider import ENDPOINT, OpenAI
+from .provider import OpenAI, provider_endpoint
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
 from .scoring import REVIEW_INSTRUCTIONS, project
@@ -203,7 +203,7 @@ def _verify_review(intake, initial, review, initial_review=None, followup=None):
     keys(provenance, required)
     if provenance["prompt_sha256"] != digest(messages) or provenance["schema_sha256"] != digest(schema) or provenance["provider_config_sha256"] != digest(config["provider"]) or provenance["configured_model"] != config["provider"]["model"]:
         raise VerifierError("review_provenance_binding")
-    if not review["simulation"] and (provenance["provider"] != "openai" or provenance["endpoint"] != ENDPOINT):
+    if not review["simulation"] and (provenance["provider"] != "openai" or provenance["endpoint"] != provider_endpoint(config["provider"])):
         raise VerifierError("untrusted_provider_provenance")
     integer(provenance["attempts"], 1, config["provider"]["max_attempts"])
     number(provenance["elapsed_seconds"], 0, config["limits"]["total_review_seconds"])

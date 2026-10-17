@@ -125,7 +125,7 @@ class Provider(unittest.TestCase):
         import socket
         import threading
         import llm_verifier.provider as module
-        for phase in ('headers','body','stream'):
+        for phase in ('headers','body'):
             with self.subTest(phase=phase):
                 listener=socket.socket();listener.settimeout(2);listener.bind(('127.0.0.1',0));listener.listen(1)
                 port=listener.getsockname()[1]
@@ -138,11 +138,8 @@ class Provider(unittest.TestCase):
                                 if phase=='headers':
                                     outgoing=b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}'
                                 else:
-                                    headers=b'HTTP/1.1 200 OK\r\nContent-Length: 200\r\n'
-                                    if phase=='stream':
-                                        headers+=b'Content-Type: text/event-stream\r\n'
-                                    client.sendall(headers+b'\r\n')
-                                    outgoing=(b':x\n\n'*50) if phase=='stream' else b'x'*200
+                                    client.sendall(b'HTTP/1.1 200 OK\r\nContent-Length: 200\r\n\r\n')
+                                    outgoing=b'x'*200
                                 for byte in outgoing:
                                     client.sendall(bytes([byte]));time.sleep(.025)
                     except OSError:
@@ -156,8 +153,7 @@ class Provider(unittest.TestCase):
                            "p._http_worker()")
                 started=time.monotonic()
                 with patch.object(module,'_CHILD_BOOTSTRAP',bootstrap),self.assertRaisesRegex(InfrastructureError,'^provider_timeout$'):
-                    body=b'{"stream":true}' if phase=='stream' else b'{}'
-                    HttpTransport().request(body,'not-a-real-key',.15,1024)
+                    HttpTransport().request(b'{}','not-a-real-key',.15,1024)
                 self.assertLess(time.monotonic()-started,.7)
                 thread.join(timeout=2)
                 self.assertFalse(thread.is_alive())
@@ -372,30 +368,30 @@ class Provider(unittest.TestCase):
         from llm_verifier.config import normalize
         with example() as (_, effective, _):
             raw=copy.deepcopy(effective['config'])
-            raw['provider'].update(timeout_seconds=600,max_attempts=1)
-            raw['limits']['total_review_seconds']=1200
+            raw['provider'].update(timeout_seconds=1200,max_attempts=1)
+            raw['limits']['total_review_seconds']=2400
             normalized=normalize(raw)
-            self.assertEqual(normalized['provider']['timeout_seconds'],600)
-            self.assertEqual(normalized['limits']['total_review_seconds'],1200)
-            for field, value in [('timeout_seconds',601),('total_review_seconds',1201)]:
+            self.assertEqual(normalized['provider']['timeout_seconds'],1200)
+            self.assertEqual(normalized['limits']['total_review_seconds'],2400)
+            for field, value in [('timeout_seconds',1201),('total_review_seconds',2401)]:
                 bad=copy.deepcopy(raw)
                 bad['provider' if field=='timeout_seconds' else 'limits'][field]=value
                 with self.assertRaises(VerifierError):
                     normalize(bad)
             transport=Mock();transport.request.return_value=completion({})
             provider=OpenAI(normalized['provider'],transport=transport,api_key='test-key')
-            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,601]):
+            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,1201]):
                 with self.assertRaisesRegex(InfrastructureError,'^provider_time_budget$'):
-                    provider.review([],{},1200,1)
-            self.assertEqual(transport.request.call_args.args[2],600)
+                    provider.review([],{},2400,1)
+            self.assertEqual(transport.request.call_args.args[2],1200)
 
-    def test_retry_timeouts_share_the_six_hundred_second_phase_budget(self):
+    def test_retry_timeouts_share_the_twenty_minute_phase_budget(self):
         with example() as (_, effective, _):
-            config={**effective['config']['provider'],'timeout_seconds':400,'max_attempts':2}
+            config={**effective['config']['provider'],'timeout_seconds':800,'max_attempts':2}
             transport=Mock()
             transport.request.side_effect=[InfrastructureError('provider_timeout'),completion({})]
-            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,399,400,500]):
+            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,799,800,1000]):
                 _, provenance=OpenAI(config,transport=transport,api_key='test-key',
-                    sleeper=lambda _:None).review([],{},1200,2)
-            self.assertEqual([call.args[2] for call in transport.request.call_args_list],[400,200])
-            self.assertEqual(provenance['elapsed_seconds'],500)
+                    sleeper=lambda _:None).review([],{},2400,2)
+            self.assertEqual([call.args[2] for call in transport.request.call_args_list],[800,400])
+            self.assertEqual(provenance['elapsed_seconds'],1000)

@@ -58,7 +58,7 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Total reserved output bytes | 393,216 | 4,194,304 |
 | Memory MiB / CPUs / processes / tmpfs MiB | 256 / 1 / 32 / 16 | 1024 / 4 / 128 / 64 |
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
-| Total review seconds / HTTP attempts across both reviews | 180 / 4 | 1200 / 6 |
+| Total review seconds / generation attempts across both reviews | 180 / 4 | 2400 / 6 |
 
 Candidate experiments and organizer checks share all run/time/output budgets.
 The registry source union independently uses the same file/count/byte caps as the
@@ -99,16 +99,17 @@ Defaults: `max_completion_tokens: 8192`, `timeout_seconds: 60`, `max_attempts: 2
 `max_response_bytes: 262144`, `response_format: "json_schema"`. The completion token
 cap includes visible output and reasoning tokens; it is not an input-token cap.
 
-A single HTTP attempt may have at most 600 seconds. Each review phase has a
-separate hard wall bound of 600 seconds across its attempts, even if the
+A single HTTP attempt may have at most 1200 seconds. Each review phase has a
+separate hard wall bound of 1200 seconds across its attempts, even if the
 configured aggregate budget is larger. Initial and final reviews together may
-use at most 1200 seconds; the defaults remain unchanged. The killable worker
+use at most 2400 seconds; the defaults remain unchanged. The killable worker
 continues to bound DNS, TLS, writes, headers and body reads. For large proofs at
 high reasoning effort, organizers should qualify a sufficient explicit timeout
-(for example 600 seconds with one attempt and a 1200-second aggregate budget).
+(for example 1200 seconds with one attempt and a 2400-second aggregate budget).
 Reasoning models can take several minutes; see the
 [OpenAI long-running request guidance](https://developers.openai.com/api/docs/guides/background).
-This adapter retains its fixed Chat Completions endpoint and request semantics.
+The default mode retains its fixed Chat Completions endpoint and request semantics;
+background mode is an explicit organizer opt-in described below.
 
 Exhausted retries report the last safe failure category: `provider_timeout`,
 `provider_transport_failed`, `provider_rate_limited`, or `provider_server_error`.
@@ -119,7 +120,7 @@ arbitrary exception text are never included in these diagnostics.
 
 Optional `provider.reasoning_effort` accepts exactly `"none"`, `"minimal"`,
 `"low"`, `"medium"`, `"high"`, `"xhigh"` or `"max"`; null and non-string values
-are rejected. When present it is sent unchanged as the top-level Chat Completions
+are rejected. In the default mode it is sent unchanged as the top-level Chat Completions
 `reasoning_effort` field and bound by the existing provider-config hash. When
 omitted, no field or local default is added to the normalized config or request,
 preserving their previous bytes. Supported efforts depend on the selected model;
@@ -132,7 +133,8 @@ CircuitBreaker must explicitly configure `"model": "gpt-6-astra"` and
 starter selects neither a model nor an effort default.
 
 See the [OpenAI request reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
-and the local reference schema for bounds. Each request sends `n: 1` and `store: false`. Streaming defaults to false. It sends no tools, sampling overrides, routing
+and the local reference schema for bounds. Default-mode requests send `n: 1`,
+`stream: false`, and `store: false`. It sends no tools, sampling overrides, routing
 policy or attribution headers. `store: false` disables stored completions; it does
 not establish an account-level zero-retention guarantee or disable abuse monitoring.
 Organizers manage those controls with OpenAI separately; see
@@ -215,17 +217,30 @@ choice ended with `finish_reason: "length"`. It is an infrastructure failure;
 no partial decision is accepted and no semantic repair retry is performed.
 
 
-An organizer may explicitly set provider.stream to true for long reasoning
-requests. This sends stream=true and stream_options.include_usage=true to the
-same fixed Chat Completions endpoint, retaining store=false, the configured
-model/effort, schema and all wall/request limits. Omission preserves historical
-request bytes. There is no storage-based background request or alternate model.
+An organizer may explicitly set provider.background=true to use the fixed
+OpenAI Responses endpoint for a long reasoning review. The adapter preserves the
+same messages, model/effort, output-token allowance, JSON schema and store=false.
+Omission preserves the historical Chat Completions request bytes and endpoint.
+The endpoint in sealed provenance must exactly match the selected mode.
 
-The private worker bounds SSE wire bytes to 16 times max_response_bytes (at most
-16 MiB), and bounds the reassembled completion to max_response_bytes. It accepts
-one consistent response identity and choice, assistant text only, a finish event,
-a final usage event and [DONE]. It ignores SSE comments/keepalives but rejects
-refusals, tool calls, ambiguous identities, malformed or incomplete streams.
-Only a complete reassembled response reaches the existing strict decision parser.
-Malformed streams fail without semantic retry. A closed HTTP connection reports
-provider_connection_closed; arbitrary socket/provider exception text is discarded.
+Background mode creates one generation, polls only that validated response ID,
+and accepts only a completed response with one completed assistant text message.
+Refusals, tool output, failure, cancellation, incomplete output and invalid
+usage fail without semantic repair. Reasoning items/summaries are not retained.
+The normalized decision still passes all existing judgment/score validation.
+Per-response bytes remain bounded by max_response_bytes. The killable worker
+retains its total deadline; individual HTTP calls have at most 30 seconds.
+
+The generation-attempt budget counts POSTs that start reviews. Each attempt adds
+at most 120 GET polls, spaced by 10 seconds, and at most one cancellation plus one
+DELETE (123 HTTP calls total including generation). Poll failures retry the same
+generation, never trigger a fresh model judgment. Ten seconds of the attempt wall
+budget are reserved for best-effort cancellation/deletion; the parent still
+kills a stuck worker at the hard deadline. Cleanup failure cannot change an
+already obtained judgment. No provider credential or raw error text is logged.
+
+Current OpenAI background documentation allows store=false, while retaining
+temporary response state for asynchronous execution/polling (roughly ten minutes).
+This differs from a foreground request with no asynchronous state. Organizers
+must select this mode explicitly and apply their account-level data controls:
+https://developers.openai.com/api/docs/guides/background

@@ -25,7 +25,7 @@ LIMITS = {
     "memory_mb": (256, 64, 1024), "cpus": (1, 1, 4),
     "pids": (32, 8, 128), "tmpfs_mb": (16, 1, 64),
     "max_prompt_bytes": (2097152, 1024, 8388608),
-    "total_review_seconds": (180, 1, 600), "total_provider_requests": (4, 1, 6),
+    "total_review_seconds": (180, 1, 1200), "total_provider_requests": (4, 1, 6),
 }
 PROVIDER_DEFAULTS = {"max_completion_tokens": 8192, "timeout_seconds": 60, "max_attempts": 2,
                      "max_response_bytes": 262144, "response_format": "json_schema"}
@@ -126,7 +126,7 @@ def normalize(raw):
             or provider["model"].lower() in {"auto", "default"}):
         raise VerifierError("explicit_provider_model_required")
     integer(provider["max_completion_tokens"], 128, 32768)
-    integer(provider["timeout_seconds"], 1, 180)
+    integer(provider["timeout_seconds"], 1, 600)
     integer(provider["max_attempts"], 1, 3)
     integer(provider["max_response_bytes"], 1024, 1048576)
     if provider["response_format"] not in ("json_schema", "json_object"):

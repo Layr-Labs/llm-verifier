@@ -58,7 +58,7 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Total reserved output bytes | 393,216 | 4,194,304 |
 | Memory MiB / CPUs / processes / tmpfs MiB | 256 / 1 / 32 / 16 | 1024 / 4 / 128 / 64 |
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
-| Total review seconds / HTTP attempts across both reviews | 180 / 4 | 600 / 6 |
+| Total review seconds / HTTP attempts across both reviews | 180 / 4 | 1200 / 6 |
 
 Candidate experiments and organizer checks share all run/time/output budgets.
 The registry source union independently uses the same file/count/byte caps as the
@@ -98,6 +98,24 @@ reject it before a network call.
 Defaults: `max_completion_tokens: 8192`, `timeout_seconds: 60`, `max_attempts: 2`,
 `max_response_bytes: 262144`, `response_format: "json_schema"`. The completion token
 cap includes visible output and reasoning tokens; it is not an input-token cap.
+
+A single HTTP attempt may have at most 600 seconds. Each review phase has a
+separate hard wall bound of 600 seconds across its attempts, even if the
+configured aggregate budget is larger. Initial and final reviews together may
+use at most 1200 seconds; the defaults remain unchanged. The killable worker
+continues to bound DNS, TLS, writes, headers and body reads. For large proofs at
+high reasoning effort, organizers should qualify a sufficient explicit timeout
+(for example 600 seconds with one attempt and a 1200-second aggregate budget).
+Reasoning models can take several minutes; see the
+[OpenAI long-running request guidance](https://developers.openai.com/api/docs/guides/background).
+This adapter retains its fixed Chat Completions endpoint and request semantics.
+
+Exhausted retries report the last safe failure category: `provider_timeout`,
+`provider_transport_failed`, `provider_rate_limited`, or `provider_server_error`.
+A response-size violation reports `provider_response_limit` without retry.
+`provider_attempt_budget` means no attempt was available, rather than hiding
+an actual transport timeout. Provider error bodies, headers, credentials and
+arbitrary exception text are never included in these diagnostics.
 
 Optional `provider.reasoning_effort` accepts exactly `"none"`, `"minimal"`,
 `"low"`, `"medium"`, `"high"`, `"xhigh"` or `"max"`; null and non-string values

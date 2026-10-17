@@ -87,7 +87,7 @@ class Provider(unittest.TestCase):
             'Accept':'application/json','User-Agent':'llm-verifier/0.1'})
         response.read1.assert_not_called()
         response.status=200;response.read1.side_effect=[b'a'*33]
-        with patch('http.client.HTTPSConnection',return_value=conn),self.assertRaises(InfrastructureError):
+        with patch('http.client.HTTPSConnection',return_value=conn),self.assertRaisesRegex(InfrastructureError,'^provider_response_limit$'):
             HttpTransport()._request_in_child(b'{}','KEY',1,32)
         conn.close.assert_called()
 
@@ -129,7 +129,7 @@ class Provider(unittest.TestCase):
                            f"p.http.client.HTTPSConnection=lambda host,timeout:http.client.HTTPConnection('127.0.0.1',{port},timeout=timeout); "
                            "p._http_worker()")
                 started=time.monotonic()
-                with patch.object(module,'_CHILD_BOOTSTRAP',bootstrap),self.assertRaises(InfrastructureError):
+                with patch.object(module,'_CHILD_BOOTSTRAP',bootstrap),self.assertRaisesRegex(InfrastructureError,'^provider_timeout$'):
                     HttpTransport().request(b'{}','not-a-real-key',.15,1024)
                 self.assertLess(time.monotonic()-started,.7)
                 thread.join(timeout=2)
@@ -279,3 +279,96 @@ class Provider(unittest.TestCase):
             request = loads(transport.request.call_args.args[0])
             self.assertEqual(request['model'], 'gpt-6-astra')
             self.assertEqual(request['reasoning_effort'], 'high')
+
+    def test_exhaustion_preserves_safe_failure_categories(self):
+        with example() as (_, effective, _):
+            cases = (
+                ([InfrastructureError('provider_timeout')]*2, 'provider_timeout'),
+                ([RuntimeError('PRIVATE')]*2, 'provider_transport_failed'),
+                ([InfrastructureError('PRIVATE')]*2, 'provider_transport_failed'),
+                ([InfrastructureError({'PRIVATE':'SECRET'})]*2, 'provider_transport_failed'),
+                ([HttpResponse(429,b'PRIVATE')]*2, 'provider_rate_limited'),
+                ([HttpResponse(503,b'PRIVATE')]*2, 'provider_server_error'),
+                ([HttpResponse(503,b'PRIVATE'),InfrastructureError('provider_timeout')], 'provider_timeout'),
+            )
+            for failures, category in cases:
+                with self.subTest(category=category, failures=failures):
+                    transport=Mock();transport.request.side_effect=failures
+                    provider=OpenAI(effective['config']['provider'],transport=transport,
+                        api_key='PRIVATE',sleeper=lambda _:None)
+                    with self.assertRaisesRegex(InfrastructureError,'^'+category+'$') as error:
+                        provider.review([],{},100,4)
+                    self.assertNotIn('PRIVATE',str(error.exception))
+                    self.assertEqual(transport.request.call_count,2)
+
+    def test_size_failure_is_not_retried(self):
+        with example() as (_, effective, _):
+            transport=Mock();transport.request.side_effect=InfrastructureError('provider_response_limit')
+            provider=OpenAI(effective['config']['provider'],transport=transport,api_key='test-key')
+            with self.assertRaisesRegex(InfrastructureError,'^provider_response_limit$'):
+                provider.review([],{},100,4)
+            transport.request.assert_called_once()
+
+    def test_worker_only_emits_allowlisted_failure_codes(self):
+        import io
+        from types import SimpleNamespace
+        from llm_verifier.provider import _http_worker, TRANSPORT_ERRORS
+        for failure in [InfrastructureError(code) for code in TRANSPORT_ERRORS]+[
+                InfrastructureError('PRIVATE'),InfrastructureError({'PRIVATE':'SECRET'}),
+                RuntimeError('PRIVATE')]:
+            with self.subTest(failure=failure):
+                output=io.BytesIO()
+                metadata=canonical({'key':'PRIVATE','timeout':1,'limit':1024})+b'\n{}'
+                with patch('sys.stdin',SimpleNamespace(buffer=io.BytesIO(metadata))), \
+                     patch('sys.stdout',SimpleNamespace(buffer=output)), \
+                     patch.object(HttpTransport,'_request_in_child',side_effect=failure):
+                    if failure.args and type(failure.args[0]) is str and failure.args[0] in TRANSPORT_ERRORS:
+                        _http_worker()
+                        self.assertEqual(output.getvalue(),b'error\n'+failure.args[0].encode())
+                    else:
+                        with self.assertRaises(SystemExit):
+                            _http_worker()
+                        self.assertEqual(output.getvalue(),b'')
+                self.assertNotIn(b'PRIVATE',output.getvalue())
+
+    def test_parent_accepts_only_allowlisted_worker_error_frames(self):
+        import llm_verifier.provider as module
+        for code, expected in [('provider_timeout','provider_timeout'),
+                ('provider_response_limit','provider_response_limit'),
+                ('PRIVATE','provider_transport_failed')]:
+            bootstrap="import sys;sys.stdin.buffer.read();sys.stdout.buffer.write("+repr(('error\n'+code).encode())+")"
+            with self.subTest(code=code),patch.object(module,'_CHILD_BOOTSTRAP',bootstrap):
+                with self.assertRaisesRegex(InfrastructureError,'^'+expected+'$'):
+                    HttpTransport().request(b'{}','PRIVATE',1,1024)
+
+    def test_long_review_config_and_phase_bound(self):
+        from llm_verifier.config import normalize
+        with example() as (_, effective, _):
+            raw=copy.deepcopy(effective['config'])
+            raw['provider'].update(timeout_seconds=600,max_attempts=1)
+            raw['limits']['total_review_seconds']=1200
+            normalized=normalize(raw)
+            self.assertEqual(normalized['provider']['timeout_seconds'],600)
+            self.assertEqual(normalized['limits']['total_review_seconds'],1200)
+            for field, value in [('timeout_seconds',601),('total_review_seconds',1201)]:
+                bad=copy.deepcopy(raw)
+                bad['provider' if field=='timeout_seconds' else 'limits'][field]=value
+                with self.assertRaises(VerifierError):
+                    normalize(bad)
+            transport=Mock();transport.request.return_value=completion({})
+            provider=OpenAI(normalized['provider'],transport=transport,api_key='test-key')
+            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,601]):
+                with self.assertRaisesRegex(InfrastructureError,'^provider_time_budget$'):
+                    provider.review([],{},1200,1)
+            self.assertEqual(transport.request.call_args.args[2],600)
+
+    def test_retry_timeouts_share_the_six_hundred_second_phase_budget(self):
+        with example() as (_, effective, _):
+            config={**effective['config']['provider'],'timeout_seconds':400,'max_attempts':2}
+            transport=Mock()
+            transport.request.side_effect=[InfrastructureError('provider_timeout'),completion({})]
+            with patch('llm_verifier.provider.time.monotonic',side_effect=[0,0,399,400,500]):
+                _, provenance=OpenAI(config,transport=transport,api_key='test-key',
+                    sleeper=lambda _:None).review([],{},1200,2)
+            self.assertEqual([call.args[2] for call in transport.request.call_args_list],[400,200])
+            self.assertEqual(provenance['elapsed_seconds'],500)

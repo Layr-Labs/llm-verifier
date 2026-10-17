@@ -13,6 +13,9 @@ from .errors import InfrastructureError, VerifierError
 from .jsonutil import canonical, digest, loads
 
 ENDPOINT = "https://api.openai.com/v1/chat/completions"
+# One credentialed job must remain below the hosted 15-minute job deadline.
+MAX_REVIEW_SECONDS = 600
+TRANSPORT_ERRORS = frozenset({"provider_timeout", "provider_response_limit", "provider_transport_failed"})
 
 
 @dataclass
@@ -51,6 +54,10 @@ class HttpTransport:
                     raise InfrastructureError("provider_response_limit")
                 if not chunk:
                     return HttpResponse(response.status, bytes(output))
+        except InfrastructureError:
+            raise
+        except TimeoutError:
+            raise InfrastructureError("provider_timeout") from None
         except Exception:
             raise InfrastructureError("provider_transport_failed") from None
         finally:
@@ -78,11 +85,22 @@ class HttpTransport:
             if process.returncode != 0 or len(output) > limit + 16:
                 raise InfrastructureError("provider_transport_failed")
             status, payload = output.split(b"\n", 1)
+            if status == b"error":
+                code = payload.decode("ascii")
+                if code in TRANSPORT_ERRORS:
+                    raise InfrastructureError(code)
+                raise InfrastructureError("provider_transport_failed")
             if status not in {str(n).encode() for n in range(100, 600)}:
                 raise InfrastructureError("provider_transport_failed")
             if time.monotonic() - started > timeout:
                 raise InfrastructureError("provider_timeout")
             return HttpResponse(int(status), payload)
+        except subprocess.TimeoutExpired:
+            raise InfrastructureError("provider_timeout") from None
+        except InfrastructureError as exc:
+            if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+                raise
+            raise InfrastructureError("provider_transport_failed") from None
         except Exception:
             raise InfrastructureError("provider_transport_failed") from None
         finally:
@@ -108,6 +126,13 @@ def _http_worker():
         response = HttpTransport()._request_in_child(body, metadata["key"], metadata["timeout"], metadata["limit"])
         sys.stdout.buffer.write(str(response.status).encode() + b"\n" + response.body)
         sys.stdout.buffer.flush()
+    except InfrastructureError as exc:
+        # Only fixed diagnostic categories cross the private worker pipe.
+        if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+            sys.stdout.buffer.write(b"error\n" + exc.args[0].encode("ascii"))
+            sys.stdout.buffer.flush()
+            return
+        raise SystemExit(1) from None
     except BaseException:
         # No tracebacks or arbitrary provider response/error text from the child.
         raise SystemExit(1) from None
@@ -184,8 +209,10 @@ class OpenAI:
         if "reasoning_effort" in config:
             request["reasoning_effort"] = config["reasoning_effort"]
         body = canonical(request)
+        seconds = min(seconds, MAX_REVIEW_SECONDS)
         started = time.monotonic()
         attempts = min(requests, config["max_attempts"])
+        last_failure = "provider_attempt_budget"
         for attempt in range(1, attempts + 1):
             remaining = seconds - (time.monotonic() - started)
             if remaining <= 0:
@@ -193,9 +220,16 @@ class OpenAI:
             response = None
             try:
                 response = self.transport.request(body, self._key, min(remaining, config["timeout_seconds"]), config["max_response_bytes"])
+            except InfrastructureError as exc:
+                # Preserve only known static categories, never arbitrary text.
+                if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+                    if exc.args[0] == "provider_response_limit":
+                        raise
+                    last_failure = exc.args[0]
+                else:
+                    last_failure = "provider_transport_failed"
             except Exception:
-                # Never expose exception text, headers or a chained traceback.
-                pass
+                last_failure = "provider_transport_failed"
             if response is not None:
                 if len(response.body) > config["max_response_bytes"]:
                     raise InfrastructureError("provider_response_limit")
@@ -211,6 +245,7 @@ class OpenAI:
                     return decision, metadata
                 if response.status != 429 and not 500 <= response.status <= 599:
                     raise InfrastructureError("provider_http_failed")
+                last_failure = "provider_rate_limited" if response.status == 429 else "provider_server_error"
             if attempt < attempts:
                 self.sleeper(min(0.5 * attempt, max(0, seconds - (time.monotonic() - started))))
-        raise InfrastructureError("provider_attempt_budget")
+        raise InfrastructureError(last_failure)

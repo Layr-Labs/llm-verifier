@@ -145,26 +145,40 @@ def _safe_identifier(value):
 
 
 def parse_response(response, configured_model):
+    # Categories are fixed by this parser, never copied from provider text.
+    category = "envelope_json"
     try:
         payload = loads(response.body)
+        category = "envelope"
         if type(payload) is not dict or payload.get("object") != "chat.completion" or payload.get("error") is not None:
             raise VerifierError("provider_envelope")
+        category = "choices"
         choices = payload["choices"]
         if type(choices) is not list or len(choices) != 1:
             raise VerifierError("ambiguous_response")
         choice = choices[0]
-        if type(choice) is not dict or choice.get("finish_reason") != "stop" or choice.get("error") is not None:
+        category = "unfinished"
+        if type(choice) is not dict or choice.get("error") is not None:
             raise VerifierError("unfinished_response")
+        if choice.get("finish_reason") == "length":
+            category = "output_token_limit"
+            raise VerifierError("unfinished_response")
+        if choice.get("finish_reason") != "stop":
+            raise VerifierError("unfinished_response")
+        category = "message"
         message = choice["message"]
         if type(message) is not dict or message.get("role") != "assistant" or message.get("tool_calls") or message.get("function_call") or message.get("refusal") is not None:
             raise VerifierError("refusal_or_tool_response")
         if type(message.get("content")) is not str:
             raise VerifierError("text_response_required")
+        category = "decision_json"
         decision = loads(message["content"])
+        category = "metadata"
         returned_model = _safe_identifier(payload["model"])
         response_id = _safe_identifier(payload["id"]) if payload.get("id") is not None else None
         # Preserve useful numeric usage only, never arbitrary provider metadata.
         usage = {}
+        category = "usage"
         if "usage" in payload:
             if type(payload["usage"]) is not dict:
                 raise VerifierError("usage_invalid")
@@ -177,7 +191,7 @@ def parse_response(response, configured_model):
         return decision, {"configured_model": configured_model, "returned_model": returned_model,
                           "request_id": response_id, "usage": usage}
     except (VerifierError, KeyError, TypeError, ValueError):
-        raise InfrastructureError("provider_response_invalid") from None
+        raise InfrastructureError("provider_response_invalid_" + category) from None
 
 
 class OpenAI:

@@ -26,6 +26,29 @@ class Provider(unittest.TestCase):
             with self.subTest(payload=payload),self.assertRaisesRegex(InfrastructureError,'provider_response_invalid'):
                 parse_response(HttpResponse(200,canonical(payload)),'test-model')
 
+    def test_response_diagnostics_are_static_and_truncation_is_not_retried(self):
+        baseline=loads(completion({'kind':'judgment'}).body)
+        variants=[]
+        for reason,category in [('length','output_token_limit'),('SECRET','unfinished')]:
+            data=copy.deepcopy(baseline)
+            data['choices'][0]['finish_reason']=reason
+            data['choices'][0]['message']['content']='SECRET'
+            variants.append((data,category))
+        data=copy.deepcopy(baseline);data['choices'][0]['message']['content']='SECRET'
+        variants.append((data,'decision_json'))
+        data=copy.deepcopy(baseline);data['model']='SECRET/INVALID'
+        variants.append((data,'metadata'))
+        data=copy.deepcopy(baseline);data['usage']['total_tokens']='SECRET'
+        variants.append((data,'usage'))
+        for payload,category in variants:
+            with self.subTest(category=category),example() as (_,effective,_):
+                transport=Mock();transport.request.return_value=HttpResponse(200,canonical(payload))
+                provider=OpenAI(effective['config']['provider'],transport=transport,api_key='dummy')
+                with self.assertRaisesRegex(InfrastructureError,'^provider_response_invalid_'+category+'$') as error:
+                    provider.review([],{},100,4)
+                transport.request.assert_called_once()
+                self.assertNotIn('SECRET',str(error.exception))
+
     def test_transport_error_retry_limits_and_redaction(self):
         with example() as (_,effective,_):
             config=effective['config']['provider']

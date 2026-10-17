@@ -205,3 +205,12 @@ conditionals, unions, regexes, defaults, coercion, extra keywords and additional
 properties are rejected. Property names are bounded strings. The reference
 JSON schemas describe structural shapes; executable validators additionally
 check this dialect, limits, source references and semantic bindings.
+
+
+Malformed HTTP 200 responses report a fixed parser category after
+`provider_response_invalid_`: envelope JSON, envelope, choices, unfinished,
+output token limit, message, decision JSON, metadata, or usage (underscores
+replace spaces). These categories reveal neither response text nor credentials.
+In particular, `provider_response_invalid_output_token_limit` means the single
+choice ended with `finish_reason: "length"`. It is an infrastructure failure;
+no partial decision is accepted and no semantic repair retry is performed.

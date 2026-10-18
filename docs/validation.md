@@ -119,3 +119,14 @@ These tests use mocked model responses. No live or paid OpenAI request, hosted
 workflow dispatch, model qualification or challenge rollout is part of this
 validation. The earlier validation records above describe their historical
 implementation and remain unchanged. Atomic acceptance integration is separate.
+
+## Long hosted review repair (2026-10-17)
+
+EC2 validation runs 161 source tests, with five gated Docker skips; all 37
+provider tests pass. Background coverage includes a real private-worker HTTP
+fixture (creation, same-ID polling, deletion), exact native request bytes,
+store=false, no input truncation, schema/effort preservation, transient poll
+errors, hard poll/time bounds, cancellation/cleanup, safe response IDs,
+refusal/tool/truncation rejection, usage normalization and exact mode-specific
+endpoint provenance. Existing killable-worker and credential-placement
+regressions remain green. Hosted background execution awaits explicit approval.

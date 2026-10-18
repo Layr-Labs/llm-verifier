@@ -55,7 +55,7 @@ source. Every phase verifies the embedded inputs, its exact predecessor digests,
 and the current verifier's content hash. Duplicate JSON structures compare canonical
 bytes, so integers, floats and booleans cannot substitute for one another. Model provenance binds exact prompt and
 schema hashes, configured/returned model, request ID if present, numeric usage,
-attempt count, elapsed time and the fixed OpenAI endpoint. No routing metadata is
+generation-attempt count, elapsed time and the selected fixed OpenAI endpoint. No routing metadata is
 retained. `request_id` records the completion envelope ID when present, not an HTTP
 header.
 
@@ -123,7 +123,11 @@ truncated, tool-call, multi-choice, error-bearing or semantically invalid respon
 fail without repair; valid rejections are never retried. HTTP error bodies,
 exception text, arbitrary usage metadata, headers and raw provider errors are not
 published. OpenAI configuration and native schema compatibility are explicit,
-with no model/provider fallback. Only a non-streaming `chat.completion` envelope
+with no model/provider fallback. Explicit background mode accepts only a completed
+Responses object with one assistant text message and normalizes it into the same
+envelope. It uses bounded polling of one response ID, best-effort cleanup and
+store=false; see configuration for temporary polling-state retention and exact
+HTTP/generation bounds. Otherwise, only a non-streaming `chat.completion` envelope
 with one assistant text choice, `finish_reason: "stop"`, and no non-null refusal
 is eligible for local judgment validation. Requests explicitly send `store: false`;
 see [configuration and retention controls](configuration.md#provider-configuration).

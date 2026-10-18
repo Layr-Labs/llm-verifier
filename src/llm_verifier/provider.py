@@ -4,15 +4,25 @@ from dataclasses import dataclass
 import http.client
 import os
 import re
+import ssl
 from pathlib import Path
 import subprocess
 import sys
 import time
 
 from .errors import InfrastructureError, VerifierError
+from .background import ENDPOINT as BACKGROUND_ENDPOINT, ERRORS as BACKGROUND_ERRORS, request_background
 from .jsonutil import canonical, digest, loads
 
 ENDPOINT = "https://api.openai.com/v1/chat/completions"
+# One credentialed job must remain below the hosted 30-minute job deadline.
+MAX_REVIEW_SECONDS = 1200
+TRANSPORT_ERRORS = frozenset({"provider_timeout", "provider_response_limit", "provider_transport_failed",
+                              "provider_connection_closed"}) | BACKGROUND_ERRORS
+
+
+def provider_endpoint(config):
+    return BACKGROUND_ENDPOINT if config.get("background", False) else ENDPOINT
 
 
 @dataclass
@@ -22,14 +32,14 @@ class HttpResponse:
 
 
 class HttpTransport:
-    def _request_in_child(self, body, api_key, timeout, limit):
+    def _request_in_child(self, body, api_key, timeout, limit, *, method="POST", path="/v1/chat/completions"):
         # http.client does not automatically follow redirects (unlike urlopen).
         # Each read updates the socket timeout to the remaining wall budget.
         deadline = time.monotonic() + timeout
         conn = http.client.HTTPSConnection("api.openai.com", timeout=timeout)
         response = None
         try:
-            conn.request("POST", "/v1/chat/completions", body=body,
+            conn.request(method, path, body=body,
                          headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json",
                                   "Accept": "application/json", "User-Agent": "llm-verifier/0.1"})
             response = conn.getresponse()
@@ -51,6 +61,12 @@ class HttpTransport:
                     raise InfrastructureError("provider_response_limit")
                 if not chunk:
                     return HttpResponse(response.status, bytes(output))
+        except InfrastructureError:
+            raise
+        except TimeoutError:
+            raise InfrastructureError("provider_timeout") from None
+        except (http.client.RemoteDisconnected, http.client.IncompleteRead, ConnectionError, ssl.SSLEOFError):
+            raise InfrastructureError("provider_connection_closed") from None
         except Exception:
             raise InfrastructureError("provider_transport_failed") from None
         finally:
@@ -78,11 +94,22 @@ class HttpTransport:
             if process.returncode != 0 or len(output) > limit + 16:
                 raise InfrastructureError("provider_transport_failed")
             status, payload = output.split(b"\n", 1)
+            if status == b"error":
+                code = payload.decode("ascii")
+                if code in TRANSPORT_ERRORS:
+                    raise InfrastructureError(code)
+                raise InfrastructureError("provider_transport_failed")
             if status not in {str(n).encode() for n in range(100, 600)}:
                 raise InfrastructureError("provider_transport_failed")
             if time.monotonic() - started > timeout:
                 raise InfrastructureError("provider_timeout")
             return HttpResponse(int(status), payload)
+        except subprocess.TimeoutExpired:
+            raise InfrastructureError("provider_timeout") from None
+        except InfrastructureError as exc:
+            if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+                raise
+            raise InfrastructureError("provider_transport_failed") from None
         except Exception:
             raise InfrastructureError("provider_transport_failed") from None
         finally:
@@ -105,9 +132,21 @@ def _http_worker():
         body = sys.stdin.buffer.read(16 * 1024 * 1024 + 1)
         if len(body) > 16 * 1024 * 1024:
             raise ValueError()
-        response = HttpTransport()._request_in_child(body, metadata["key"], metadata["timeout"], metadata["limit"])
+        transport = HttpTransport()
+        if loads(body, limit=16 * 1024 * 1024).get("background") is True:
+            response = HttpResponse(*request_background(body, metadata["key"], metadata["timeout"],
+                                                       metadata["limit"], transport._request_in_child))
+        else:
+            response = transport._request_in_child(body, metadata["key"], metadata["timeout"], metadata["limit"])
         sys.stdout.buffer.write(str(response.status).encode() + b"\n" + response.body)
         sys.stdout.buffer.flush()
+    except InfrastructureError as exc:
+        # Only fixed diagnostic categories cross the private worker pipe.
+        if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+            sys.stdout.buffer.write(b"error\n" + exc.args[0].encode("ascii"))
+            sys.stdout.buffer.flush()
+            return
+        raise SystemExit(1) from None
     except BaseException:
         # No tracebacks or arbitrary provider response/error text from the child.
         raise SystemExit(1) from None
@@ -120,26 +159,40 @@ def _safe_identifier(value):
 
 
 def parse_response(response, configured_model):
+    # Categories are fixed by this parser, never copied from provider text.
+    category = "envelope_json"
     try:
         payload = loads(response.body)
+        category = "envelope"
         if type(payload) is not dict or payload.get("object") != "chat.completion" or payload.get("error") is not None:
             raise VerifierError("provider_envelope")
+        category = "choices"
         choices = payload["choices"]
         if type(choices) is not list or len(choices) != 1:
             raise VerifierError("ambiguous_response")
         choice = choices[0]
-        if type(choice) is not dict or choice.get("finish_reason") != "stop" or choice.get("error") is not None:
+        category = "unfinished"
+        if type(choice) is not dict or choice.get("error") is not None:
             raise VerifierError("unfinished_response")
+        if choice.get("finish_reason") == "length":
+            category = "output_token_limit"
+            raise VerifierError("unfinished_response")
+        if choice.get("finish_reason") != "stop":
+            raise VerifierError("unfinished_response")
+        category = "message"
         message = choice["message"]
         if type(message) is not dict or message.get("role") != "assistant" or message.get("tool_calls") or message.get("function_call") or message.get("refusal") is not None:
             raise VerifierError("refusal_or_tool_response")
         if type(message.get("content")) is not str:
             raise VerifierError("text_response_required")
+        category = "decision_json"
         decision = loads(message["content"])
+        category = "metadata"
         returned_model = _safe_identifier(payload["model"])
         response_id = _safe_identifier(payload["id"]) if payload.get("id") is not None else None
         # Preserve useful numeric usage only, never arbitrary provider metadata.
         usage = {}
+        category = "usage"
         if "usage" in payload:
             if type(payload["usage"]) is not dict:
                 raise VerifierError("usage_invalid")
@@ -152,7 +205,7 @@ def parse_response(response, configured_model):
         return decision, {"configured_model": configured_model, "returned_model": returned_model,
                           "request_id": response_id, "usage": usage}
     except (VerifierError, KeyError, TypeError, ValueError):
-        raise InfrastructureError("provider_response_invalid") from None
+        raise InfrastructureError("provider_response_invalid_" + category) from None
 
 
 class OpenAI:
@@ -183,9 +236,22 @@ class OpenAI:
         # Omission preserves historical request bytes and provider defaults.
         if "reasoning_effort" in config:
             request["reasoning_effort"] = config["reasoning_effort"]
+        endpoint = provider_endpoint(config)
+        if config.get("background", False):
+            native_format = {"type": config["response_format"]}
+            if config["response_format"] == "json_schema":
+                native_format.update(name="llm_verifier_decision_v1", strict=True, schema=schema)
+            request = {"model": config["model"], "input": messages, "max_output_tokens": config["max_completion_tokens"],
+                       "background": True, "stream": False, "store": False, "truncation": "disabled",
+                       "text": {"format": native_format}}
+            if "reasoning_effort" in config:
+                request["reasoning"] = {"effort": config["reasoning_effort"]}
+            endpoint = BACKGROUND_ENDPOINT
         body = canonical(request)
+        seconds = min(seconds, MAX_REVIEW_SECONDS)
         started = time.monotonic()
         attempts = min(requests, config["max_attempts"])
+        last_failure = "provider_attempt_budget"
         for attempt in range(1, attempts + 1):
             remaining = seconds - (time.monotonic() - started)
             if remaining <= 0:
@@ -193,9 +259,16 @@ class OpenAI:
             response = None
             try:
                 response = self.transport.request(body, self._key, min(remaining, config["timeout_seconds"]), config["max_response_bytes"])
+            except InfrastructureError as exc:
+                # Preserve only known static categories, never arbitrary text.
+                if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
+                    if exc.args[0] == "provider_response_limit" or exc.args[0] in BACKGROUND_ERRORS:
+                        raise
+                    last_failure = exc.args[0]
+                else:
+                    last_failure = "provider_transport_failed"
             except Exception:
-                # Never expose exception text, headers or a chained traceback.
-                pass
+                last_failure = "provider_transport_failed"
             if response is not None:
                 if len(response.body) > config["max_response_bytes"]:
                     raise InfrastructureError("provider_response_limit")
@@ -204,13 +277,14 @@ class OpenAI:
                     elapsed = time.monotonic() - started
                     if elapsed > seconds:
                         raise InfrastructureError("provider_time_budget")
-                    metadata.update(provider="openai", endpoint=ENDPOINT,
+                    metadata.update(provider="openai", endpoint=endpoint,
                                     prompt_sha256=digest(messages), schema_sha256=digest(schema),
                                     provider_config_sha256=digest(config), attempts=attempt,
                                     elapsed_seconds=elapsed)
                     return decision, metadata
                 if response.status != 429 and not 500 <= response.status <= 599:
                     raise InfrastructureError("provider_http_failed")
+                last_failure = "provider_rate_limited" if response.status == 429 else "provider_server_error"
             if attempt < attempts:
                 self.sleeper(min(0.5 * attempt, max(0, seconds - (time.monotonic() - started))))
-        raise InfrastructureError("provider_attempt_budget")
+        raise InfrastructureError(last_failure)

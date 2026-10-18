@@ -20,6 +20,15 @@ configured. Positive infinity retains exact records with null numeric scores
 because Yukon cannot order infinity.
 """
 
+def review_instructions(config):
+    if config.get("acceptance_policy", "atomic-claims-v1") == "exploratory-v1":
+        return REVIEW_INSTRUCTIONS.replace(
+            "ALL original submission.claims are established as written",
+            "ALL original submission.claims meet exploratory-v1 exactly as written"
+        ).replace("atomic validity", "whole-submission exploratory validity")
+    return REVIEW_INSTRUCTIONS
+
+
 def score_value(value):
     if value == "positive_infinity":
         return None

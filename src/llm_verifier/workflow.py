@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 from .artifacts import intake_snapshot, verify_intake
-from .config import load_config
+from .config import load_config, resolve_submission
 from .errors import InfrastructureError, VerifierError
 from .files import directory_fd, outside, relative, write_json
 from .jsonutil import loads, sha
@@ -36,12 +36,14 @@ def prepare(args):
     root = Path(args.checkout) / root_dir
     with directory_fd(root):
         pass
-    submission = relative(args.submission)
+    submission = resolve_submission(root, args.config, args.submission)
     score_path = relative(args.score_path)
     outside(root / score_path, root / submission)
     # The score must not overwrite protected config or rules either.
     effective = load_config(root, args.config, submission, loads(args.evaluation) if args.evaluation else None)
-    if score_path in {args.config, effective["config"]["rules_path"], *effective["checker_files"]}:
+    if score_path == effective["config"].get("submission_selector", {}).get("path"):
+        raise VerifierError("score_path_overwrites_config")
+    if score_path in {args.config, effective["config"]["rules_path"], *effective["config"].get("rules_files", []), *effective["checker_files"]}:
         raise VerifierError("score_path_overwrites_config")
     outside(args.out, root / submission)
     context = {"kind": "github-actions", "candidate_revision": args.candidate_revision,

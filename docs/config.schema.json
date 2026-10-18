@@ -421,6 +421,47 @@
         ],
         "additionalProperties": false
       }
+    },
+    "acceptance_policy": {
+      "enum": [
+        "atomic-claims-v1",
+        "exploratory-v1"
+      ],
+      "default": "atomic-claims-v1"
+    },
+    "rules_files": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+      },
+      "description": "Additional protected rule files included verbatim in reviewer context."
+    },
+    "submission_selector": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+        },
+        "directory": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+        }
+      },
+      "required": [
+        "path",
+        "directory"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

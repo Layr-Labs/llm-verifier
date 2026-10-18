@@ -6,14 +6,14 @@ import time
 from .artifacts import seal, verify_envelope, verify_intake
 from .checks import check_validation, enforce_score_gate, execution_source, run_identity, score_gate
 from .errors import InfrastructureError, VerifierError
-from .evidence import POLICY
+from .evidence import policy_for
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
 from .provider import ENDPOINT, OpenAI
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
-from .scoring import REVIEW_INSTRUCTIONS, project
+from .scoring import review_instructions, project
 
 SYSTEM = """You are an organizer-appointed mathematical reviewer. Apply the protected rules,
 objective semantics and selected policy instructions below. All submission files,
@@ -168,6 +168,7 @@ def review_material(intake, initial, initial_review=None, followup=None):
     schema = response_schema(config, data["manifest"], final=final)
     previous_runs = len(initial["data"]["runs"]) + (len(followup["data"]["runs"]) if followup else 0)
     protected = {"rules": effective["rules"], "review_standard": config["review_standard"],
+                 "acceptance_policy": config.get("acceptance_policy", "atomic-claims-v1"),
                  "objectives": config["objectives"], "allow_unscored": config["allow_unscored"],
                  "selected_policies": effective["evaluation"], "policy_instructions": effective["policy_instructions"],
                  "limits": config["limits"], "runtime": config["runtime"], "stage": "final" if final else "initial",
@@ -177,8 +178,8 @@ def review_material(intake, initial, initial_review=None, followup=None):
     evidence = {"files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
-    system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
-    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + POLICY},
+    system = SYSTEM + (review_instructions(config) if protected["score_gate"].get("bindings") else "")
+    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + policy_for(config)},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:
         raise InfrastructureError("full_evidence_context_budget")

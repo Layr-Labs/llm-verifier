@@ -20,6 +20,16 @@ def reseal(value):
     return seal(value['stage'], value['bindings'], value['data'], value['parents'], value['simulation'])
 
 
+def fill_toy(root):
+    """Fill an init form with the toy that init copied before the starter became a form (as on master)."""
+    root=Path(root); toy=REPO/'tests/fixtures/toy-starter'
+    for name in ('rules.md','README.md','submission/submission.json','submission/proof.md'):
+        shutil.copyfile(toy/name,root/name)
+    config=json.loads((root/'verifier.json').read_text())
+    config.update(json.loads((toy/'verifier-fields.json').read_text()))
+    (root/'verifier.json').write_text(json.dumps(config,indent=2,ensure_ascii=False)+'\n')
+
+
 @contextmanager
 def example(name='proof', mutate=None, evaluation=None):
     with tempfile.TemporaryDirectory() as tmp:

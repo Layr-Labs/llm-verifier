@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "title": "Coefficient one half",
+  "claims": [
+    {
+      "statement": "For every positive integer n, 1 + ... + n >= n²/2.",
+      "score": {"numerator": "1", "denominator": "2"},
+      "evidence": ["proof.md"]
+    }
+  ],
+  "experiments": []
+}

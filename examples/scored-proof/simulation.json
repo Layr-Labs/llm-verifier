@@ -1,0 +1,18 @@
+{
+  "initial_results": [],
+  "initial_decision": {
+    "kind": "judgment",
+    "judgment": {
+      "valid": true,
+      "scores": null,
+      "reason": "The deletion argument establishes the declared bound with c = 1/2 for every graph with n >= 1 vertices.",
+      "evidence_refs": [
+        "source:proof.md"
+      ],
+      "review_standard": "independent-sets-review-v1"
+    },
+    "requests": []
+  },
+  "followup_results": [],
+  "final_decision": null
+}

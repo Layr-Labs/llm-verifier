@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 2,
+  "name": "independent-sets",
+  "tracks": [
+    {
+      "name": "main",
+      "description": "independent-sets",
+      "category": "math",
+      "mode": "pareto",
+      "promotionMode": "manual",
+      "direction": "+",
+      "objectives": [
+        {
+          "name": "independence_coefficient",
+          "direction": "+"
+        }
+      ],
+      "paretoPolicies": {
+        "scoring": {},
+        "validity": {}
+      },
+      "editablePaths": [
+        "submission"
+      ],
+      "setupCommand": [
+        "llm-verifier",
+        "intake",
+        "--root",
+        ".",
+        "--out",
+        ".yukon/work/intake.json"
+      ],
+      "benchmarkCommand": [
+        "llm-verifier",
+        "finalize",
+        "--intake",
+        ".yukon/work/intake.json",
+        "--initial",
+        ".yukon/work/initial.json",
+        "--initial-review",
+        ".yukon/work/review.json",
+        "--score",
+        ".yukon/score.json",
+        "--dossier",
+        ".yukon/dossier.json"
+      ],
+      "scorePath": ".yukon/score.json",
+      "maxSubmissionBytes": 262144,
+      "runner": {
+        "provider": "github-actions",
+        "workflow": "benchmark.yml",
+        "scoreArtifactName": "benchmark-score",
+        "maxConcurrentWorkflows": 2
+      }
+    }
+  ]
+}

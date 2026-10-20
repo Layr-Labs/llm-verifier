@@ -1,24 +1,19 @@
-# Quadratic lower bound for triangular numbers
+# TODO: challenge title
 
-Maximize c such that 1 + 2 + ... + n >= c n² for every positive integer n.
+TODO: one sentence that says what participants prove.
 
 ## Problem and model
 
-The claim covers every positive integer n, with exact arithmetic.
+TODO: the definitions, the scope and the exact statement that a submission must prove.
 
 ## Score
 
-The score is the exact rational coefficient c. Higher is better.
+TODO: what the score measures, which direction is better, its range, and how scores compare.
 
 ## What does not count
 
-A proof for finitely many n, or only for all sufficiently large n, does not
-establish the claim.
+TODO: known invalid arguments, each written as a rule.
 
 ## Submission and review
 
-Submit an exact rational coefficient and a proof covering all n. A separate submission declaring only a useful lemma may be accepted without a
-score. Every declared claim must be established exactly as written.
-
-Replace this toy problem, its objective, and its example submission together when
-authoring a new challenge.
+TODO: what to submit, whether unscored partial results count, and that a person confirms official results.

@@ -13,15 +13,13 @@ Use the task's specification, challenge name, reviewer model and verifier revisi
 Resolve ambiguities affecting scope, eligibility or score meaning before encoding them.
 
 - For a new directory, run `llm-verifier init DIRECTORY --name NAME --model OPENAI_MODEL`.
-  Replace the toy rules, objective and example submission together.
+  It writes a form: replace every `TODO` marker it reports.
 - Edit ordinary files. Keep scientific rules in `rules.md`, store each proof once,
   and reference its files from the claim. Use `score_source` for each scoring objective.
 - Minimize review surface: add code, tests and prose only for a concrete challenge
   requirement. Reuse the shared runner and keep generic protocol tests upstream.
   Custom checkers need compact, independently determined positive and negative cases.
-- Settle each item in the guide's "Choices to make before publishing": reviewer
-  settings, partial results, score name and bounds, rules outline, README, review
-  label and verifier pin.
+- Follow the guide's "What init fills in and what you fill in" for each `TODO`.
 - Run `llm-verifier check --root DIRECTORY`. For custom checkers, prepare the configured
   pinned Docker image and run `llm-verifier test-checkers --root DIRECTORY` without
   model credentials.

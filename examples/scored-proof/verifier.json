@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "id": "independent-sets",
+  "rules_path": "rules.md",
+  "review_standard": "independent-sets-review-v1",
+  "objectives": [
+    {
+      "name": "independence_coefficient",
+      "direction": "+",
+      "unit": "dimensionless",
+      "semantics": "The exact rational c proved in alpha(G) >= c*n^2/(2*m+n) for every finite simple graph with n >= 1 vertices and m edges.",
+      "score_source": {
+        "claim": 0
+      },
+      "score_minimum": {
+        "numerator": "0",
+        "denominator": "1"
+      },
+      "score_maximum": {
+        "numerator": "1",
+        "denominator": "1"
+      }
+    }
+  ],
+  "allow_unscored": false,
+  "policies": {
+    "scoring": {},
+    "validity": {}
+  },
+  "supported_policies": {
+    "scoring": [
+      {
+        "selector": {},
+        "instructions": "Use the configured score source."
+      }
+    ],
+    "validity": [
+      {
+        "selector": {},
+        "instructions": "Apply rules.md to the complete claim and proof."
+      }
+    ]
+  },
+  "provider": {
+    "model": "SELECT_OPENAI_MODEL"
+  },
+  "limits": {
+    "max_followups": 0
+  }
+}

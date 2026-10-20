@@ -8,12 +8,11 @@ llm-verifier check --root my-challenge
 ```
 
 Replace `OPENAI_MODEL` with an explicitly selected native OpenAI model ID; there
-is no default. Review processes alone need `OPENAI_API_KEY`.
-For a model that supports it, set optional `provider.reasoning_effort` in
-`verifier.json`; see [provider configuration](configuration.md#provider-configuration)
-for exact values and model-specific support. CircuitBreaker explicitly requires
-`"model": "gpt-6-astra"` with `"reasoning_effort": "high"`. Omitting effort sends
-no effort setting; the generic starter has no effort default.
+is no default. Review processes alone need `OPENAI_API_KEY`. The starter sets no
+reasoning effort, because supported efforts depend on the model (see
+[provider configuration](configuration.md#provider-configuration)), and it keeps
+the generic review budgets. Set both before publishing, as described in
+[choices to make](#choices-to-make-before-publishing).
 
 Edit `rules.md`, `verifier.json`, and `submission/` directly. Rules contain the
 scientific specification; configuration selects objectives, a reviewer and any
@@ -26,6 +25,47 @@ files and caches outside `submission/` are allowed. Keep protected config, rules
 and checker files outside participant-editable paths. Repository access controls
 and the organizer's trusted checkout provide authority; this command is not a
 repository attestation or a restriction on an authoring agent's permissions.
+
+## Choices to make before publishing
+
+The starter is a toy and leaves these choices open. Make each one on purpose;
+`check` validates their format, not whether they suit the challenge.
+
+- Reviewer settings: keep the model the task selected. CircuitBreaker's reviewer,
+  on `gpt-6-astra`, finished a hosted review of its long baseline proof
+  ([run](https://github.com/Layr-Labs/circuitbreaker-llm-verifier/actions/runs/39051956398))
+  with these other provider fields and review budget:
+
+  ```json
+  "reasoning_effort": "high", "max_completion_tokens": 32768,
+  "timeout_seconds": 1200, "background": true, "max_attempts": 1
+  ```
+
+  and `"total_review_seconds": 2400` in `limits`. Use them for proof review on
+  that model unless you have qualified other settings. Keep the other limits. The
+  defaults (8,192 output tokens, 60 seconds per request and 180 seconds per review)
+  can stop a long review before it returns a verdict. Background mode keeps
+  temporary response state at OpenAI for about ten minutes; choose it on purpose,
+  as [provider configuration](configuration.md#provider-configuration) describes.
+- Partial results: set `allow_unscored` to match the rules, `false` when every
+  submission must claim a score and `true` only when the rules accept unscored
+  lemmas. The starter's `true` serves its toy lemma.
+- Score name: give each objective a descriptive snake_case name for the scored
+  quantity, such as `gate_coefficient`, not a bare symbol such as `c`.
+- Score bounds: set `score_minimum` and `score_maximum` whenever the rules fix
+  them, for example a known optimum, or a lower limit below which every claim is
+  trivially true. Omit a bound only when the score has no limit in that direction.
+  Bounds need a `score_source`; see [score sources](#score-sources).
+- Rules outline: keep the starter's four sections (problem and model, score, what
+  does not count, and submission and review). Write known invalid arguments under
+  "What does not count" as rules, not as worked cases.
+- README: replace the starter README, which addresses the organizer, with what
+  participants need: the problem, how to submit and how review works.
+- Review label: set the value of `review_standard` to a label that starts with
+  the challenge ID and ends with a version, such as `circuitbreaker-scoped-review-v1`.
+  Raise the version when the review rules change.
+- Verifier pin: pin the newest commit on `master`. `github` writes the same pin to
+  both workflow callers.
 
 ## Score sources
 

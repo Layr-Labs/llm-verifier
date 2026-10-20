@@ -19,6 +19,9 @@ Resolve ambiguities affecting scope, eligibility or score meaning before encodin
 - Minimize review surface: add code, tests and prose only for a concrete challenge
   requirement. Reuse the shared runner and keep generic protocol tests upstream.
   Custom checkers need compact, independently determined positive and negative cases.
+- Settle each item in the guide's "Choices to make before publishing": reviewer
+  settings, partial results, score name and bounds, rules outline, README, review
+  label and verifier pin.
 - Run `llm-verifier check --root DIRECTORY`. For custom checkers, prepare the configured
   pinned Docker image and run `llm-verifier test-checkers --root DIRECTORY` without
   model credentials.

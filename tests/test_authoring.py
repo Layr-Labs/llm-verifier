@@ -1,6 +1,7 @@
 """Author a directory, validate it, and exercise the actual checker adapter."""
 import os
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -9,24 +10,104 @@ from llm_verifier import scaffold
 from llm_verifier.errors import VerifierError
 from llm_verifier.files import read_json, write_json
 from llm_verifier.runner import DockerRunner
-from tests.support import example
+from tests.support import example, fill_toy
 from tests.test_checks import result
 
 
 class Authoring(unittest.TestCase):
-    def test_editable_starter_and_normal_working_files(self):
+    def test_init_writes_a_form_that_check_refuses_until_filled(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'challenge'
-            scaffold.initialize(root, 'new-challenge', 'test-model')
+            report = scaffold.initialize(root, 'new-challenge', 'test-model')
             self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]), 6)
-            self.assertEqual(read_json(root/'verifier.json')['provider']['model'], 'test-model')
-            self.assertNotIn('reasoning_effort', read_json(root/'verifier.json')['provider'])
-            (root/'rules.md').write_text('A revised challenge specification.')
+            config = read_json(root/'verifier.json')
+            self.assertEqual(config['provider']['model'], 'test-model')
+            # A model without qualified settings gets no effort or budget default.
+            self.assertNotIn('reasoning_effort', config['provider'])
+            self.assertNotIn('total_review_seconds', config['limits'])
+            self.assertEqual(config['review_standard'], 'new-challenge-review-v1')
+            self.assertIn('rules.md:1', report['unfilled'])
+            self.assertTrue(any(p.startswith('submission/') for p in report['unfilled']))
+            with self.assertRaisesRegex(VerifierError, r'unfilled_todo: rules\.md:1'):
+                scaffold.check(root)
+            fill_toy(root)
             (root/'.venv').mkdir(); (root/'.venv/cache').write_text('irrelevant')
             (root/'notes.md').write_text('Author notes')
             self.assertTrue(scaffold.check(root)['valid'])
             self.assertFalse((root/'yukon-scaffold.json').exists())
             self.assertFalse((root/'.github').exists())
+
+    def test_qualified_model_gets_its_reviewer_settings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'challenge'
+            scaffold.initialize(root, 'astra-challenge', 'gpt-6-astra')
+            config = read_json(root/'verifier.json')
+            provider, limits = scaffold.KNOWN_REVIEWERS['gpt-6-astra']
+            self.assertEqual({k: config['provider'][k] for k in provider}, provider)
+            self.assertEqual(config['limits']['total_review_seconds'], limits['total_review_seconds'])
+            fill_toy(root)
+            self.assertTrue(scaffold.check(root)['valid'])
+
+    def test_placeholders_count_only_where_the_starter_put_them(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'challenge'
+            scaffold.initialize(root, 'test', 'test-model'); fill_toy(root)
+            # Participants edit submission/ and check runs on their pull requests,
+            # so their own text may say TODO without being a starter placeholder.
+            proof = root/'submission/proof.md'
+            proof.write_text(proof.read_text() + '\nTODO: tighten the constant in a later submission.\n')
+            self.assertTrue(scaffold.check(root)['valid'])
+            proof.write_text((scaffold.TEMPLATES/'starter/submission/proof.md').read_text())
+            with self.assertRaisesRegex(VerifierError, r'unfilled_todo: submission/proof\.md:1'):
+                scaffold.check(root)
+            fill_toy(root)
+            # An organizer's own note is not a starter placeholder either.
+            rules = (root/'rules.md').read_text()
+            (root/'rules.md').write_text(rules + '\nTODO: a weighted version may follow as a separate challenge.\n')
+            self.assertTrue(scaffold.check(root)['valid'])
+            (root/'rules.md').write_text(rules + '\nTODO: known invalid arguments, each written as a rule.\n')
+            with self.assertRaisesRegex(VerifierError, r'unfilled_todo: rules\.md:'):
+                scaffold.check(root)
+
+    def test_placeholders_are_found_in_configured_rules_and_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'challenge'
+            scaffold.initialize(root, 'test', 'test-model'); fill_toy(root)
+            config = read_json(root/'verifier.json')
+            (root/'rules.md').rename(root/'spec.md'); config['rules_path'] = 'spec.md'
+            write_json(root/'verifier.json', config)
+            self.assertTrue(scaffold.check(root)['valid'])
+            (root/'spec.md').write_text((scaffold.TEMPLATES/'starter/rules.md').read_text())
+            with self.assertRaisesRegex(VerifierError, r'unfilled_todo: spec\.md:1'):
+                scaffold.check(root)
+            fill_toy(root); (root/'rules.md').rename(root/'spec.md')
+            starter = read_json(scaffold.TEMPLATES/'starter/verifier.json')
+            config['allow_unscored'] = starter['allow_unscored']
+            write_json(root/'verifier.json', config)
+            with self.assertRaisesRegex(VerifierError, r'unfilled_todo: verifier\.json:'):
+                scaffold.check(root)
+
+    def test_github_refuses_an_unfilled_form_and_the_scan_stays_bounded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'challenge'
+            scaffold.initialize(root, 'test', 'test-model')
+            with self.assertRaisesRegex(VerifierError, 'unfilled_todo'):
+                scaffold.github(root, 'owner/verifier', 'a'*40)
+            self.assertFalse((root/'benchmark.json').exists())
+            fill_toy(root)
+            # A large participant file is skipped by the scan and left to intake's own size limits.
+            (root/'submission/large.md').write_text('TODO: a complete proof of the starting claim.\n' + 'x' * scaffold.SCAN_BYTES)
+            self.assertEqual(scaffold.unfilled(root), [])
+            (root/'submission/large.md').unlink()
+            # Deeply nested participant JSON falls back to line matching instead of crashing.
+            for depth in (950, 5000):
+                (root/'submission/data.json').write_text('[' * depth + '0' + ']' * depth)
+                self.assertEqual(scaffold.unfilled(root), [])
+            (root/'submission/data.json').unlink()
+            # A symlinked submission root is not followed.
+            outside = Path(tmp)/'outside'; shutil.copytree(scaffold.TEMPLATES/'starter/submission', outside)
+            shutil.rmtree(root/'submission'); (root/'submission').symlink_to(outside, target_is_directory=True)
+            self.assertEqual(scaffold.unfilled(root), [])
 
     def test_init_preserves_existing_paths_and_rejects_bad_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -44,7 +125,7 @@ class Authoring(unittest.TestCase):
 
     def test_declared_proof_and_checker_files_stay_protected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model')
+            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model'); fill_toy(root)
             (root/'submission/proof.md').unlink()
             with self.assertRaisesRegex(VerifierError, 'claim_evidence_file_missing'):
                 scaffold.check(root)
@@ -54,7 +135,7 @@ class Authoring(unittest.TestCase):
 
     def test_hosted_files_refresh_from_configuration(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model')
+            root=Path(tmp)/'challenge'; scaffold.initialize(root, 'test', 'test-model'); fill_toy(root)
             scaffold.github(root, 'owner/verifier', 'a'*40)
             workflow=(root/'.github/workflows/benchmark.yml').read_text()
             self.assertEqual(workflow.count('a'*40), 2)

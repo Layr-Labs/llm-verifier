@@ -1,18 +1,20 @@
 {
   "version": 1,
-  "id": "triangular-bound",
+  "id": "set-by-init",
   "rules_path": "rules.md",
-  "review_standard": "scoped-mathematical-review-v1",
+  "review_standard": "set-by-init",
   "objectives": [
     {
-      "name": "coefficient",
-      "direction": "+",
-      "unit": "coefficient of n²",
-      "semantics": "The declared rational coefficient in the accepted all-n inequality.",
-      "score_source": {"claim": 0}
+      "name": "TODO: descriptive snake_case name for the scored quantity",
+      "direction": "TODO: + if higher is better, - if lower is better",
+      "unit": "TODO: unit of the score",
+      "semantics": "TODO: what the score means",
+      "score_source": {"claim": 0},
+      "score_minimum": "TODO: an exact fraction such as {\"numerator\": \"0\", \"denominator\": \"1\"}, or delete this line if there is no minimum",
+      "score_maximum": "TODO: an exact fraction, or delete this line if there is no maximum"
     }
   ],
-  "allow_unscored": true,
+  "allow_unscored": "TODO: true if the rules accept unscored partial results, otherwise false",
   "policies": {"scoring": {}, "validity": {}},
   "supported_policies": {
     "scoring": [{"selector": {}, "instructions": "Use the configured score source."}],

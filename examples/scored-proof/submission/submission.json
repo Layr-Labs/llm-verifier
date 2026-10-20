@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "title": "Universal independent-set bound with c = 1/2",
+  "claims": [
+    {
+      "statement": "For every finite simple undirected graph G with n >= 1 vertices and m edges, alpha(G) >= (1/2)*n^2/(2*m+n), where alpha(G) is its maximum independent-set size.",
+      "score": {
+        "numerator": "1",
+        "denominator": "2"
+      },
+      "evidence": [
+        "proof.md"
+      ]
+    }
+  ],
+  "experiments": []
+}

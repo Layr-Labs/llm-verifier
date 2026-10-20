@@ -12,14 +12,14 @@ from llm_verifier.config import load_config, normalize
 from llm_verifier.errors import VerifierError
 from llm_verifier.files import read_json, write_json
 from llm_verifier.scoring import score_value
-from tests.support import reseal, scripted_model
+from tests.support import fill_toy, reseal, scripted_model
 from tests.test_checks import registered, initial_run, result, retry
 
 
 @contextmanager
 def starter(change=None, configure=None):
     with tempfile.TemporaryDirectory() as tmp:
-        root=Path(tmp)/'challenge'; scaffold.initialize(root,'test','test-model')
+        root=Path(tmp)/'challenge'; scaffold.initialize(root,'test','test-model'); fill_toy(root)
         if change:
             submission=read_json(root/'submission/submission.json'); change(submission)
             write_json(root/'submission/submission.json',submission)

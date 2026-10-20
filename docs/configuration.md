@@ -128,9 +128,9 @@ qualify that model/effort pair. Unsupported requests fail as infrastructure with
 no effort fallback or downgrade. [GPT-6 Astra](https://developers.openai.com/api/docs/models/gpt-6-astra)
 and [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) support
 `low`, `medium`, `high`, `xhigh` and `max`, but not `none` or `minimal`.
-CircuitBreaker must explicitly configure `"model": "gpt-6-astra"` and
-`"reasoning_effort": "high"`; omission does not guarantee high effort. The generic
-starter selects neither a model nor an effort default.
+Omission does not guarantee high effort. The starter sets no effort; `init` writes
+CircuitBreaker's reviewer settings only for `gpt-6-astra`, as the
+[authoring guide](authoring.md#what-init-fills-in-and-what-you-fill-in) describes.
 
 See the [OpenAI request reference](https://developers.openai.com/api/reference/python/resources/chat/subresources/completions/methods/create)
 and the local reference schema for bounds. Default-mode requests send `n: 1`,

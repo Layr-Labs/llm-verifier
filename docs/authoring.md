@@ -1,31 +1,70 @@
 # Author a challenge
 
-Install this verifier revision, then create a six-file working example:
+Install this verifier revision, then create a challenge form:
 
 ```sh
 llm-verifier init my-challenge --name my-challenge --model OPENAI_MODEL
-llm-verifier check --root my-challenge
 ```
 
 Replace `OPENAI_MODEL` with an explicitly selected native OpenAI model ID; there
 is no default. Review processes alone need `OPENAI_API_KEY`.
-For a model that supports it, set optional `provider.reasoning_effort` in
-`verifier.json`; see [provider configuration](configuration.md#provider-configuration)
-for exact values and model-specific support. CircuitBreaker explicitly requires
-`"model": "gpt-6-astra"` with `"reasoning_effort": "high"`. Omitting effort sends
-no effort setting; the generic starter has no effort default.
 
-Edit `rules.md`, `verifier.json`, and `submission/` directly. Rules contain the
+`init` writes the files with `TODO` markers wherever the value depends on the
+problem, and prints where they are. Replace every marker, then run:
+
+```sh
+llm-verifier check --root my-challenge
+```
+
+`check` and `github` refuse the challenge while any of the starter's own placeholders
+remains, and name where it is: a file and line, or a field in a JSON file. Your own
+notes and participants' text may say TODO; only the starter's placeholders count. For a complete
+worked example of a scored proof, see [examples/scored-proof](../examples/scored-proof). Rules contain the
 scientific specification; configuration selects objectives, a reviewer and any
-checkers. Keep the example proof in one file. There is no external definition,
+checkers. Keep the starting proof in one file. There is no external definition,
 controller receipt, copied runner, generated skill, or fixture generator.
 
-`check` validates the config, candidate snapshot, evidence references, checker
+`check` also validates the config, candidate snapshot, evidence references, checker
 bundles and known-answer cases. It executes no code or model. Unrelated authoring
 files and caches outside `submission/` are allowed. Keep protected config, rules
 and checker files outside participant-editable paths. Repository access controls
 and the organizer's trusted checkout provide authority; this command is not a
 repository attestation or a restriction on an authoring agent's permissions.
+
+## What init fills in and what you fill in
+
+`init` fills in the values that have one known answer:
+
+- The review label: `review_standard` becomes `<challenge id>-review-v1`. Raise the
+  version when the review rules change.
+- Reviewer settings for `gpt-6-astra`: CircuitBreaker's reviewer finished a hosted
+  review of its long baseline proof
+  ([run](https://github.com/Layr-Labs/circuitbreaker-llm-verifier/actions/runs/39051956398))
+  with `"reasoning_effort": "high"`, `"max_completion_tokens": 32768`,
+  `"timeout_seconds": 1200`, `"background": true`, `"max_attempts": 1` and
+  `"total_review_seconds": 2400`, so `init` writes these for that model. For another
+  model, choose and qualify the settings yourself; see
+  [provider configuration](configuration.md#provider-configuration). Background mode
+  keeps temporary response state at OpenAI for about ten minutes.
+
+You fill in each `TODO`:
+
+- Rules: keep the four sections (problem and model, score, what does not count, and
+  submission and review). Write known invalid arguments under "What does not count"
+  as rules, not as worked cases.
+- Score name: a descriptive snake_case name for the scored quantity, such as
+  `gate_coefficient`, not a bare symbol such as `c`.
+- Score bounds: an exact `score_minimum` and `score_maximum` whenever the rules fix
+  them, for example a known optimum, or a lower limit below which every claim is
+  trivially true. Delete a bound line only when the score has no limit in that
+  direction. Bounds need a `score_source`; see [score sources](#score-sources).
+- Partial results: `allow_unscored` is `false` when every submission must claim a
+  score, and `true` only when the rules accept unscored lemmas.
+- README: what participants need: the problem, how to submit and how review works.
+- The starting submission: its exact claim, score and complete proof.
+
+Then pin the verifier: pass the newest commit on `master` to `github`, which writes
+the same pin to both workflow callers.
 
 ## Score sources
 

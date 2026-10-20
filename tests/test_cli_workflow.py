@@ -16,7 +16,7 @@ from tests.support import REPO, example, direct
 class CLI(unittest.TestCase):
     def test_subprocess_cli_and_both_offline_examples(self):
         with tempfile.TemporaryDirectory() as tmp:
-            for name in ('proof','computation'):
+            for name in ('proof','computation','scored-proof'):
                 output=Path(tmp)/(name+'.json')
                 result=subprocess.run([sys.executable,'-m','llm_verifier','simulate','--root',str(REPO/'examples'/name),'--script',str(REPO/'examples'/name/'simulation.json'),'--out',str(output)],capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stderr)

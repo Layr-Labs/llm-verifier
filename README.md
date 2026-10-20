@@ -52,12 +52,14 @@ its artifacts as simulation. Production workflow inputs cannot select simulation
 
 ```sh
 llm-verifier init my-challenge --name my-challenge --model OPENAI_MODEL
-llm-verifier check --root my-challenge
 ```
 
-Edit the generated rules, configuration and example submission directly. The
-[authoring guide](docs/authoring.md) covers proof files, deterministic scores,
-checker tests and the optional pinned Yukon/Actions caller.
+`init` writes a form: the rules, configuration and starting submission, with a
+`TODO:` marker wherever the value depends on the problem. Replace every marker,
+then run `llm-verifier check --root my-challenge`, which refuses any starter
+placeholder that remains and names where it is. The [authoring guide](docs/authoring.md)
+covers proof files, deterministic scores, checker tests and the optional pinned
+Yukon/Actions caller.
 For agents, start with the shared [challenge-authoring skill](skills/llm-verifier-challenge/SKILL.md).
 
 ## Independent phases
@@ -127,6 +129,9 @@ artifacts from the current trusted run may be consumed.
 - [Proof-only lemma](examples/proof): accepts a relevant two-variable lemma with
   `scores: null`. It reserves one genuine full-target objective to fit Yukon's
   1–8 objective contract, but awards no artificial score to the lemma.
+- [Scored proof](examples/scored-proof): a complete challenge that `init` and a filled
+  form produce. The score comes from the claim, with both bounds, the four rules
+  sections and a participant README.
 - [Computation-backed identity](examples/computation): the same implementation
   checks submitted finite experiments and permits one bounded follow-up batch.
 - [Toy truncated-hash collision](examples/collision): a protected checker verifies

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import tempfile
 
 from .artifacts import intake_snapshot
@@ -17,6 +18,95 @@ from .jsonutil import canonical, keys
 from .runner import DockerRunner
 
 TEMPLATES = Path(__file__).parent / "templates"
+# The starter marks every problem-specific value with a "TODO:" placeholder line.
+TODO = re.compile(r"\bTODO:")
+# Starter files are tiny; a larger file cannot be an unfilled starter file, and intake enforces size.
+SCAN_BYTES = 262144
+# Reviewer settings qualified on a hosted review, filled in by init for that model.
+KNOWN_REVIEWERS = {
+    "gpt-6-astra": ({"reasoning_effort": "high", "max_completion_tokens": 32768, "timeout_seconds": 1200,
+                     "background": True, "max_attempts": 1}, {"total_review_seconds": 2400}),
+}
+
+
+def _lines(path):
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > SCAN_BYTES:
+            return []
+        return Path(path).read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+
+
+def _json(path):
+    try:
+        return json.loads("\n".join(_lines(path)))
+    except (ValueError, RecursionError):
+        return None
+
+
+def _strings(value, path=""):
+    if type(value) is str:
+        yield path, value.strip()
+    elif type(value) is dict:
+        for key, item in value.items():
+            yield from _strings(item, f"{path}.{key}" if path else key)
+    elif type(value) is list:
+        for index, item in enumerate(value):
+            yield from _strings(item, f"{path}.{index}" if path else str(index))
+
+
+def _starter(names):
+    """The starter's placeholder lines and, for JSON files, its placeholder values."""
+    lines, values = set(), set()
+    for name in names:
+        path = TEMPLATES / "starter" / name
+        lines |= {line.strip().rstrip(",") for line in _lines(path) if TODO.search(line)}
+        if name.endswith(".json"):
+            values |= {text for _, text in _strings(_json(path)) if TODO.search(text)}
+    return lines, values
+
+
+def _found(root, name, starter):
+    lines, values = starter
+    data = _json(root / name) if name.endswith(".json") else None
+    if data is not None:
+        # Decoded values, so reformatted or compacted JSON is still checked.
+        try:
+            return [f"{name}:{path}" for path, text in _strings(data) if text in values]
+        except RecursionError:
+            pass  # Deeply nested participant JSON: fall back to whole-line matching.
+    return [f"{name}:{n}" for n, line in enumerate(_lines(root / name), 1) if line.strip().rstrip(",") in lines]
+
+
+def unfilled(root):
+    """Locations that still repeat one of the starter's own placeholders.
+
+    Whole starter placeholders, not the word TODO, decide: organizer notes and participant
+    text stay valid. Participants edit submission/, and check runs on their pull requests.
+    """
+    root = Path(root)
+    rules = "rules.md"
+    config = _json(root / "verifier.json")
+    configured = config.get("rules_path") if type(config) is dict else None
+    if type(configured) is str and configured and not os.path.isabs(configured) and ".." not in Path(configured).parts:
+        rules = configured
+    found = (_found(root, rules, _starter(["rules.md"])) + _found(root, "README.md", _starter(["README.md"]))
+             + _found(root, "verifier.json", _starter(["verifier.json"])))
+    submission = root / "submission"
+    if submission.is_dir() and not submission.is_symlink():
+        starter = _starter([str(p.relative_to(TEMPLATES / "starter"))
+                            for p in (TEMPLATES / "starter" / "submission").rglob("*") if p.is_file()])
+        for path in sorted(p for p in submission.rglob("*") if p.is_file()):
+            found += _found(root, str(path.relative_to(root)), starter)
+    return found
+
+
+def refuse_unfilled(root):
+    todo = unfilled(root)
+    if todo:
+        raise VerifierError("unfilled_todo: " + ", ".join(todo))
 
 
 def formatted(value):
@@ -27,6 +117,10 @@ def initialize(output, name, model):
     identifier(name)
     if model == "SELECT_OPENAI_MODEL":
         raise VerifierError("explicit_model_required")
+    # The form cannot pass full validation until it is filled, so check the model here as config does.
+    if (type(model) is not str or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}", model)
+            or model.lower() in {"auto", "default"}):
+        raise VerifierError("explicit_provider_model_required")
     output = Path(os.path.abspath(output))
     with directory_fd(output.parent):
         if os.path.lexists(output):
@@ -36,9 +130,15 @@ def initialize(output, name, model):
             shutil.copytree(TEMPLATES / "starter", staging, dirs_exist_ok=True)
             config = read_json(staging / "verifier.json")
             config["id"] = name
+            config["review_standard"] = f"{name}-review-v1"
             config["provider"]["model"] = model
+            if model in KNOWN_REVIEWERS:
+                provider, limits = KNOWN_REVIEWERS[model]
+                config["provider"].update(provider)
+                config["limits"].update(limits)
             write_bytes(staging / "verifier.json", formatted(config))
-            report = check(staging)
+            # The starter is a form: problem-specific TODOs remain until the author fills them.
+            report = {"unfilled": unfilled(staging)}
             os.rename(staging, output)
         finally:
             if staging.exists():
@@ -90,6 +190,7 @@ def manifest(config):
 
 
 def check(root):
+    refuse_unfilled(root)
     effective = load_config(root, "verifier.json", "submission")
     intake = intake_snapshot(effective, Path(root) / "submission")
     config = effective["config"]
@@ -112,6 +213,7 @@ def check(root):
 def github(root, repository, revision):
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or not re.fullmatch(r"[a-f0-9]{40}", revision):
         raise VerifierError("immutable_verifier_pin_required")
+    refuse_unfilled(root)
     effective = load_config(root, "verifier.json", "submission")
     if not effective["config"]["objectives"]:
         raise VerifierError("yukon_requires_objective")

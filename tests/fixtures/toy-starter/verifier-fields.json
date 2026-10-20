@@ -1,0 +1,14 @@
+{
+  "objectives": [
+    {
+      "name": "coefficient",
+      "direction": "+",
+      "unit": "coefficient of n²",
+      "semantics": "The declared rational coefficient in the accepted all-n inequality.",
+      "score_source": {
+        "claim": 0
+      }
+    }
+  ],
+  "allow_unscored": true
+}

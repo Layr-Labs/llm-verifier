@@ -19,6 +19,7 @@ MAX_IMPORT_BYTES = 1048576
 MAX_IMPORTS = 16
 MAX_ANCESTORS = 128
 FORMAT = "atomic-submission-v1"
+UNAVAILABLE_REASONS = {"rejected", "review_required", "dependency_unavailable"}
 SOURCE_FIELDS = {"submission_id", "benchmark_id", "challenge_id", "evaluation_id", "validity_result_id",
                  "verifier_evaluation_id", "accepted", "submitted_at", "completed_at", "bundle"}
 
@@ -124,17 +125,17 @@ def validate_bundle(bundle):
     integer(source["intake_created_at_ns"], 1, source["finalized_at_ns"])
     for field in ("submission_sha256", "intake_sha256", "review_sha256", "dossier_sha256", "judgment_sha256"):
         hash_value(source[field])
-    manifest = original_manifest(source["manifest"])
+    original_manifest(source["manifest"])
     bindings = source["bindings"]
     keys(bindings, {"evaluation_id", "config", "submission", "verifier", "context"})
     if bindings["evaluation_id"] != source["evaluation_id"] or bindings["submission"] != source["submission_sha256"]:
         raise VerifierError("prior_source_binding")
     for field in ("config", "submission", "verifier", "context"):
         hash_value(bindings[field])
-    ancestors = references(bundle["ancestors"], MAX_ANCESTORS)
-    declared = manifest.get("prior_results", [])
-    if not {r["submission_id"] for r in declared} <= {r["submission_id"] for r in ancestors}:
-        raise VerifierError("prior_ancestor_binding")
+    # Declared references may have supplied no accepted support. Exact lineage
+    # comes from the authenticated intake partition and publication receipt, not
+    # from interpreting every reference in the original manifest as a dependency.
+    references(bundle["ancestors"], MAX_ANCESTORS)
     return bundle
 
 
@@ -194,15 +195,24 @@ def intake_imports(snapshot, manifest, eid, created):
         raise VerifierError("prior_snapshot_version")
     platform_id(snapshot["snapshot_id"])
     consumer = consumer_identity(snapshot["consumer"])
-    pins = {}
+    pins, unavailable = {}, set()
     for ref in array(snapshot["references"], MAX_IMPORTS):
-        keys(ref, {"submission_id", "bundle_sha256"})
-        platform_id(ref["submission_id"])
-        hash_value(ref["bundle_sha256"])
-        if ref["submission_id"] in pins:
+        field = "unavailable" if type(ref) is dict and "unavailable" in ref else "bundle_sha256"
+        keys(ref, {"submission_id", field})
+        sid = ref["submission_id"]
+        platform_id(sid)
+        if sid in pins or sid in unavailable:
             raise VerifierError("duplicate_prior_reference")
-        pins[ref["submission_id"]] = ref["bundle_sha256"]
-    if set(pins) != {r["submission_id"] for r in requested}:
+        if sid == consumer["submission_id"]:
+            raise VerifierError("prior_self_or_cyclic_import")
+        if "unavailable" in ref:
+            if type(ref["unavailable"]) is not str or ref["unavailable"] not in UNAVAILABLE_REASONS:
+                raise VerifierError("prior_unavailable_reason")
+            unavailable.add(sid)
+        else:
+            hash_value(ref["bundle_sha256"])
+            pins[sid] = ref["bundle_sha256"]
+    if (set(pins) | unavailable) != {r["submission_id"] for r in requested}:
         raise VerifierError("prior_reference_snapshot_binding")
     selected, ancestry, source_ids, graph, total = [], set(), set(), {}, 0
     for source in array(snapshot["sources"], MAX_IMPORTS):
@@ -228,6 +238,8 @@ def intake_imports(snapshot, manifest, eid, created):
                              "bundle_sha256": encoded["sha256"]}})
     if source_ids != set(pins):
         raise VerifierError("prior_reference_snapshot_binding")
+    if ancestry & unavailable:
+        raise VerifierError("prior_unavailable_ancestor")
     # Check the bounded graph already supplied; never fetch recursively. Native
     # immutable ordering remains authority for forward edges and unseen sources.
     remaining = set(source_ids)

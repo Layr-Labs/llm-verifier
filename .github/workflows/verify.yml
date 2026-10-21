@@ -21,6 +21,9 @@ on:
       score_path:
         type: string
         default: .yukon/score.json
+      yukon_accepted_results:
+        type: string
+        default: ''
       yukon_evaluation:
         type: string
         default: ''
@@ -36,6 +39,9 @@ permissions:
 jobs:
   prepare:
     name: Setup pinned verifier and inert submission intake
+    permissions:
+      contents: read
+      id-token: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
@@ -49,6 +55,7 @@ jobs:
       SUBMISSION_PATH: ${{ inputs.submission_path }}
       SCORE_PATH: ${{ inputs.score_path }}
       YUKON_EVALUATION: ${{ inputs.yukon_evaluation }}
+      YUKON_ACCEPTED_RESULTS: ${{ inputs.yukon_accepted_results }}
       EVALUATION_RUN: ${{ github.run_id }}:${{ github.run_attempt }}
     steps:
       - name: Require immutable implementation revision before checkout
@@ -321,7 +328,7 @@ jobs:
           if [[ "$REVIEW_KIND" == followup ]]; then
             extra=(--followup "$RUNNER_TEMP/followup/followup.json" --final-review "$RUNNER_TEMP/final-review/final-review.json")
           fi
-          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" finalize --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" "${extra[@]}" --score-dir "$RUNNER_TEMP/score-artifact" --score-path "$SCORE_PATH" --dossier "$RUNNER_TEMP/dossier/dossier.json"
+          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" finalize --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" "${extra[@]}" --score-dir "$RUNNER_TEMP/score-artifact" --score-path "$SCORE_PATH" --dossier "$RUNNER_TEMP/dossier/dossier.json" --results "$RUNNER_TEMP/results/accepted-results.json"
       - name: Upload the only Yukon score artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
@@ -337,3 +344,10 @@ jobs:
           path: ${{ runner.temp }}/dossier/
           if-no-files-found: error
           retention-days: 30
+      - name: Upload reusable accepted results separately (absent for invalid judgments)
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: verifier-accepted-results
+          path: ${{ runner.temp }}/results/
+          if-no-files-found: ignore
+          retention-days: 90

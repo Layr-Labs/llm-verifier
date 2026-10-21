@@ -1,0 +1,18 @@
+{
+  "policies": {
+    "scoring": {
+      "version": "lemma-unscored-v1"
+    },
+    "validity": {
+      "version": "scoped-claims-v1"
+    }
+  },
+  "fields": {
+    "scores": true,
+    "validity": true
+  },
+  "admission": {
+    "version": 1,
+    "submissionReferencesEnabled": true
+  }
+}

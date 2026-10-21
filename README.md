@@ -6,9 +6,11 @@ bounded computational evidence in Docker, asks one OpenAI reviewer for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-The verifier uses [atomic acceptance](docs/atomic-claims.md) of the entire original
-declared claim set, retaining editable challenge starters, shared checker tests
-and deterministic score sources for proof claims and protected checker outputs. It is an LLM assessment, not formal certification or an
+Version 0.6 uses atomic acceptance of the original declared claim set, automatic
+submission-ID references and the mandatory
+[scientific evidence policy](docs/evidence-policy.md), retaining editable challenge
+starters, shared checker tests and deterministic scores from current proof claims
+and protected checker outputs. It is an LLM assessment, not formal certification or an
 authoritative benchmark. The examples and scripted results demonstrate
 plumbing, not mathematical reliability. The internal repository is
 `Layr-Labs/llm-verifier`. Publishing reviewed source internally does not validate
@@ -61,6 +63,9 @@ placeholder that remains and names where it is. The [authoring guide](docs/autho
 covers proof files, deterministic scores, checker tests and the optional pinned
 Yukon/Actions caller.
 For agents, start with the shared [challenge-authoring skill](skills/llm-verifier-challenge/SKILL.md).
+The [atomic decision contract](docs/atomic-claims.md) also applies without references.
+Solvers can cite exact accepted prior results through the
+[automatic reference workflow](docs/prior-results.md), with no owner import setup.
 
 ## Independent phases
 
@@ -110,7 +115,8 @@ Finalization has no model credential and executes no candidate code:
 ```sh
 # Direct initial judgment (including proof-only):
 llm-verifier finalize --intake .work/intake.json --initial .work/initial.json \
-  --initial-review .work/review.json --score .work/score.json --dossier .work/dossier.json
+  --initial-review .work/review.json --score .work/score.json --dossier .work/dossier.json \
+  --results .work/accepted-results.json
 # If and only if a follow-up was requested, add:
 # --followup .work/followup.json --final-review .work/final-review.json
 ```
@@ -168,7 +174,7 @@ A completed invalid judgment exits **0**, with `valid: false` and a reason when
 validity was requested. Malformed data, unavailable Docker, provider errors,
 insufficient infrastructure budgets or artifact mismatches exit **2**. The CLI
 clears its requested stage output before work; finalization clears stale score
-and dossier files **before reading any artifact**, and writes the score only
+dossier, accepted-result and receipt files **before reading any artifact**, and writes the score only
 after complete chain validation. Failed experiments remain explicit evidence;
 they never automatically become acceptance. When required score checks are
 configured, missing or failed checks forbid every non-null tuple; unscored
@@ -195,3 +201,8 @@ Full HashSmash support and its reviewer committee, challenge-specific
 admission dialects, formal/benchmark certification, package registry distribution
 and a hosted service are deferred. Public release, hosted deployment and license
 selection remain outside the internal source publication scope.
+
+Accepted-submission references require explicit, original-candidate
+[submission admission](docs/submission-admission.md). Missing/null defaults off.
+The existing owner API updates future candidates per Pareto track without changing
+the pinned verifier or starting a reorg; retries retain the original policy.

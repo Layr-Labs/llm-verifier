@@ -8,15 +8,17 @@ import sys
 from .artifacts import intake_snapshot, verify_intake
 from .config import load_config
 from .errors import VerifierError
-from .files import clear_output, outside, read_json, relative, write_json
+from .files import distinct_paths, clear_output, outside, read_bytes, read_json, relative, write_json
 from .jsonutil import loads
-from .pipeline import execute, finalize, review
+from .pipeline import execute, finalize, review, export_results
 from .workflow import github_output, prepare, prepare_runtime
 
 
 def parser():
     p = argparse.ArgumentParser(prog="llm-verifier", description="Snapshot, execute, review and finalize in separate trust domains.")
     sub = p.add_subparsers(dest="command", required=True)
+    cmd = sub.add_parser("inspect-results", help="Display result selectors from a Yukon discovery response; never authorizes intake")
+    cmd.add_argument("--discovery", required=True, help="GET /api/submissions/:id/accepted-results response file, or - for stdin")
     cmd = sub.add_parser("init", help="Create editable challenge source files")
     cmd.add_argument("output")
     cmd.add_argument("--name", required=True)
@@ -34,6 +36,7 @@ def parser():
         cmd.add_argument("--config", default="verifier.json", help="Protected root-relative JSON configuration")
         cmd.add_argument("--submission", default="submission", help="Candidate subtree relative to root")
         cmd.add_argument("--evaluation", default=os.environ.get("YUKON_EVALUATION"), help="Yukon evaluation JSON; defaults to YUKON_EVALUATION")
+        cmd.add_argument("--accepted-results-context", default=os.environ.get("YUKON_ACCEPTED_RESULTS"), help="Trusted Yukon workflow context; automatic in hosted evaluation")
         cmd.add_argument("--out", required=True, help="Organizer-owned output, outside candidate paths")
     intake_options(sub.add_parser("intake", help="Create a bounded immutable submission snapshot"))
     sim = sub.add_parser("simulate", help="Offline scripted plumbing only; NEVER emits an official score")
@@ -69,6 +72,11 @@ def parser():
     paths.add_argument("--score-dir", help="Fresh artifact staging directory; use --score-path")
     cmd.add_argument("--score-path", help="Manifest-relative scorePath when using --score-dir")
     cmd.add_argument("--dossier", required=True)
+    cmd.add_argument("--results", help="Atomic submission source; absent for invalid judgments")
+    cmd.add_argument("--receipt", help="Platform receipt (default: accepted-results-receipt.json beside --results)")
+    cmd = sub.add_parser("export-results", help="Revalidate a final dossier and export its original manifest and atomic verdict")
+    cmd.add_argument("--dossier", required=True)
+    cmd.add_argument("--out", required=True)
     cmd = sub.add_parser("prepare-runtime", help="Explicitly pull organizer pinned Docker image if this phase needs it; no execution")
     artifacts(cmd)
     cmd.add_argument("--phase", choices=("initial", "followup"), default="initial")
@@ -76,10 +84,17 @@ def parser():
     for name in ("checkout", "verifier-checkout", "candidate-revision", "verifier-revision", "root-dir", "config", "submission", "score-path", "out", "run-id"):
         cmd.add_argument("--" + name, required=True)
     cmd.add_argument("--evaluation", default=os.environ.get("YUKON_EVALUATION"))
+    cmd.add_argument("--accepted-results-context", default=os.environ.get("YUKON_ACCEPTED_RESULTS"))
     return p
 
 
 def run(args):
+    if args.command == "inspect-results":
+        from .prior import discovery_results
+        from .jsonutil import canonical
+        value = loads(sys.stdin.buffer.read(2 * 1024 * 1024 + 1), 2 * 1024 * 1024) if args.discovery == "-" else loads(read_bytes(args.discovery, 2 * 1024 * 1024), 2 * 1024 * 1024)
+        print(canonical(discovery_results(value)).decode())
+        return
     if args.command in {"init", "check", "test-checkers", "github"}:
         from . import scaffold
         from .jsonutil import canonical
@@ -91,14 +106,28 @@ def run(args):
             result = scaffold.check(args.root) if args.command == "check" else scaffold.test_checkers(args.root)
         print(canonical(result).decode())
         return
+    if args.command == "export-results":
+        distinct_paths([args.dossier], [args.out])
+        clear_output(args.out)
+        result = export_results(read_json(args.dossier))
+        write_json(args.out, result)
+        return
     if args.command == "finalize":
         if args.score_dir:
             if not args.score_path:
                 raise VerifierError("manifest_score_path_required")
             args.score = str(Path(args.score_dir) / relative(args.score_path))
+        if args.receipt is None and args.results:
+            args.receipt = str(Path(args.results).parent / "accepted-results-receipt.json")
+        distinct_paths([args.intake, args.initial, args.initial_review, args.followup, args.final_review],
+                       [args.score, args.dossier, args.results, args.receipt])
         # Must happen before reading ANY artifact, including intake.
         clear_output(args.score)
         clear_output(args.dossier)
+        if args.results:
+            clear_output(args.results)
+        if args.receipt:
+            clear_output(args.receipt)
     elif hasattr(args, "out"):
         if args.command in {"intake", "simulate"}:
             outside(args.out, Path(args.root) / relative(args.submission))
@@ -109,13 +138,14 @@ def run(args):
     if args.command in {"intake", "simulate"}:
         effective = load_config(args.root, args.config, args.submission, loads(args.evaluation) if args.evaluation else None)
         candidate = Path(args.root) / relative(args.submission)
+        accepted_context = loads(args.accepted_results_context, 16384) if args.accepted_results_context else None
         if args.command == "intake":
-            result = intake_snapshot(effective, candidate)
+            result = intake_snapshot(effective, candidate, accepted_results_context=accepted_context)
             write_json(args.out, result)
             github_output("intake_sha256", result["sha256"])
         else:
             from .simulation import simulate
-            simulate(effective, candidate, read_json(args.script), args.out)
+            simulate(effective, candidate, read_json(args.script), args.out, accepted_results_context=accepted_context)
         return
     intake = read_json(args.intake)
     verify_intake(intake, args.expected_intake)
@@ -136,7 +166,7 @@ def run(args):
         if args.score_dir and intake["data"]["context"].get("score_path") != args.score_path:
             raise VerifierError("manifest_score_path_binding")
         last = read_json(args.final_review) if args.final_review else None
-        finalize(intake, initial, first, args.score, args.dossier, followup, last)
+        finalize(intake, initial, first, args.score, args.dossier, followup, last, results_path=args.results, receipt_path=args.receipt)
         return
     write_json(args.out, result)
 
@@ -145,7 +175,8 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         run(args)
-        print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command == "simulate" else ""))
+        if args.command != "inspect-results":
+            print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command == "simulate" else ""))
         return 0
     except VerifierError as exc:
         # VerifierError messages are static categories, never raw provider/file text.

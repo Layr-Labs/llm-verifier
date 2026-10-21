@@ -59,6 +59,10 @@
         "workflow": "benchmark.yml",
         "scoreArtifactName": "benchmark-score",
         "maxConcurrentWorkflows": 2
+      },
+      "submissionAdmission": {
+        "version": 1,
+        "submissionReferencesEnabled": false
       }
     }
   ]

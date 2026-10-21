@@ -143,6 +143,25 @@
         ],
         "additionalProperties": false
       }
+    },
+    "prior_results": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "submission_id"
+        ],
+        "properties": {
+          "submission_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$"
+          }
+        }
+      },
+      "description": "Immutable accepted submission IDs; every original declared claim is accepted atomically."
     }
   },
   "required": [

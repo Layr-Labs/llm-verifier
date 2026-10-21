@@ -25,10 +25,11 @@ Judgments contain exactly `valid`, `scores`, `reason`, `evidence_refs` and
 `review_standard`. Validity accepts or rejects the entire original manifest claim
 set as written; no second claims list or report can redefine it. Reason is
 nonempty, bounded to 4,000 UTF-16 code units for Yukon. Valid judgments cite at
-least one known source or run reference. References are `source:<relative-path>`
-and `run:initial:<index>` / `run:followup:<index>`. The mandatory
-[atomic scientific policy](atomic-claims.md) governs assumptions, scope and
-external premises; semantic adequacy remains an LLM assessment.
+least one known source, run or prior reference. References are
+`source:<relative-path>`, `run:initial:<index>` / `run:followup:<index>` and
+`prior:<submission_id>` for authenticated dependencies. The mandatory
+[atomic scientific policy](evidence-policy.md) governs assumptions, scope,
+external premises and reuse; semantic adequacy remains an LLM assessment.
 
 The model's stage response is `{kind, judgment, requests}`. A judgment has
 `kind: "judgment"`, the judgment object and `requests: []`; a request batch has
@@ -145,3 +146,21 @@ otherwise it fails, preserving previous platform evidence. Null is explicit.
 Dossier/provenance is uploaded separately and does not add fields to the Yukon
 artifact. One logical evaluation is produced despite multiple model/execution
 phases. Infrastructure failures leave no stale final score at the requested path.
+
+## Current score sources and reusable results
+
+The raw review returns null scores for objectives with `score_source`. Atomic
+validity and every current source/check gate must permit the full score vector.
+Unavailable vectors remain unscored only when configured; exact positive infinity
+keeps records with no numeric projection. See the [single score rule](authoring.md#score-availability).
+Finalization repeats these gates and stores the derived judgment separately from
+the model response. Export reconstructs the complete chain and compares the entire
+dossier before emitting the exact original manifest and atomic verdict/provenance.
+It transfers neither scores nor checker authority.
+
+[Automatic prior resolution](prior-results.md) binds a platform snapshot to the
+current intake, including exact raw source bytes and selected validity/ancestor
+identities. No later phase refetches references. Valid finalization can emit an
+accepted bundle; invalid judgments emit only the platform receipt alongside the
+normal dossier/score. Empty-reference platform intakes also emit that receipt.
+Simulation cannot emit reusable results or an official score.

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "title": "Cross-term lemma",
+  "claims": [
+    "For all real a,b, 2ab <= a^2+b^2."
+  ],
+  "experiments": []
+}

@@ -3,14 +3,17 @@
 from pathlib import Path
 import re
 import uuid
+import time
 
 from . import __version__
-from .config import verify_effective
+from .config import submission_references_enabled, verify_effective
 from .errors import VerifierError
 from .files import snapshot
 from .jsonutil import canonical, digest, keys, loads, sha
 from .submission import manifest_from
 from .scoring import validate_objective_claims
+from .prior import intake_imports
+from .jsonutil import integer
 
 HASH = re.compile(r"[a-f0-9]{64}\Z")
 
@@ -44,33 +47,60 @@ def verify_envelope(value, stage, intake=None, parents=None):
     return value["data"]
 
 
-def intake_snapshot(effective, candidate_root, context=None, simulation=False):
+def admit_submission(effective, manifest):
+    # The original candidate-bound policy travels in the effective snapshot.
+    # No current environment, mutable challenge setting or resolver result can
+    # authorize an originally disabled candidate during replay or a later phase.
+    enabled = submission_references_enabled(effective["evaluation"].get("admission"))
+    if manifest.get("prior_results") and not enabled:
+        raise VerifierError("submission_references_disabled")
+
+
+def intake_snapshot(effective, candidate_root, context=None, simulation=False, *, accepted_results_context=None):
     verify_effective(effective)
     files = snapshot(candidate_root, effective["config"]["limits"])
     manifest = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
     validate_objective_claims(effective["config"]["objectives"], manifest["claims"])
+    admit_submission(effective, manifest)
     code = implementation()
-    context = context or {"kind": "local", "revision": "unasserted; use content hash"}
+    context = dict(context or {"kind": "local", "revision": "unasserted; use content hash"})
+    created = time.time_ns()
+    prior_snapshot = None
+    if accepted_results_context is not None:
+        from .accepted import context_identity, resolve
+        context["accepted_results"] = context_identity(accepted_results_context)
+        prior_snapshot = resolve(accepted_results_context, manifest.get("prior_results", []))
+        if canonical(prior_snapshot.get("consumer")) != canonical(context["accepted_results"]):
+            raise VerifierError("prior_consumer_binding")
     bindings = {"evaluation_id": uuid.uuid4().hex, "config": digest(effective),
                 "submission": digest(files), "verifier": code["content_sha256"], "context": digest(context)}
+    intake_imports(prior_snapshot, manifest, bindings["evaluation_id"], created)
     return seal("intake", bindings, {"effective": effective, "files": files,
-                                     "manifest": manifest, "implementation": code, "context": context}, simulation=simulation)
+                                     "manifest": manifest, "implementation": code, "context": context, "created_at_ns": created, "prior_snapshot": prior_snapshot}, simulation=simulation)
 
 
 def verify_intake(intake, expected=None):
     data = verify_envelope(intake, "intake", parents=[])
     if expected is not None and intake["sha256"] != expected:
         raise VerifierError("unexpected_intake")
-    keys(data, {"effective", "files", "manifest", "implementation", "context"})
+    keys(data, {"effective", "files", "manifest", "implementation", "context", "created_at_ns", "prior_snapshot"})
     verify_effective(data["effective"])
     manifest = manifest_from(data["files"], data["effective"]["config"]["limits"], data["effective"]["config"].get("checkers", []))
     validate_objective_claims(data["effective"]["config"]["objectives"], manifest["claims"])
     if canonical(manifest) != canonical(data["manifest"]):
         raise VerifierError("manifest_binding")
+    admit_submission(data["effective"], manifest)
     bindings = intake["bindings"]
     keys(bindings, {"evaluation_id", "config", "submission", "verifier", "context"})
     if type(bindings["evaluation_id"]) is not str or not re.fullmatch("[a-f0-9]{32}", bindings["evaluation_id"]):
         raise VerifierError("evaluation_identity")
+    integer(data["created_at_ns"], 1, 2**63 - 1)
+    intake_imports(data["prior_snapshot"], manifest, bindings["evaluation_id"], data["created_at_ns"])
+    if data["prior_snapshot"] is not None:
+        if canonical(data["context"].get("accepted_results")) != canonical(data["prior_snapshot"]["consumer"]):
+            raise VerifierError("prior_consumer_binding")
+    elif "accepted_results" in data["context"]:
+        raise VerifierError("prior_consumer_binding")
     for field, obj in (("config", data["effective"]), ("submission", data["files"]), ("context", data["context"])):
         if bindings[field] != digest(obj):
             raise VerifierError("intake_binding")

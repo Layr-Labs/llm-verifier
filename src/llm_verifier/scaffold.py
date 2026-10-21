@@ -8,14 +8,15 @@ import shutil
 import stat
 import tempfile
 
-from .artifacts import intake_snapshot
 from .checks import check_validation
-from .config import identifier, load_config
+from .config import identifier, load_config, submission_references_enabled
 from .errors import VerifierError
-from .files import directory_fd, read_bytes, read_json, write_bytes
+from .files import directory_fd, read_bytes, read_json, write_bytes, snapshot
+from .submission import manifest_from
 from .input_schema import validate_value
 from .jsonutil import canonical, keys
 from .runner import DockerRunner
+from .scoring import validate_objective_claims
 
 TEMPLATES = Path(__file__).parent / "templates"
 # The starter marks every problem-specific value with a "TODO:" placeholder line.
@@ -180,6 +181,7 @@ def manifest(config):
         "promotionMode": "manual", "direction": config["objectives"][0]["direction"],
         "objectives": [{k: o[k] for k in ("name", "direction")} for o in config["objectives"]],
         "paretoPolicies": config["policies"], "editablePaths": ["submission"],
+        "submissionAdmission": {"version": 1, "submissionReferencesEnabled": False},
         "setupCommand": ["llm-verifier", "intake", "--root", ".", "--out", ".yukon/work/intake.json"],
         "benchmarkCommand": ["llm-verifier", "finalize", "--intake", ".yukon/work/intake.json",
                              "--initial", ".yukon/work/initial.json", "--initial-review", ".yukon/work/review.json",
@@ -192,8 +194,10 @@ def manifest(config):
 def check(root):
     refuse_unfilled(root)
     effective = load_config(root, "verifier.json", "submission")
-    intake = intake_snapshot(effective, Path(root) / "submission")
+    files = snapshot(Path(root) / "submission", effective["config"]["limits"])
+    submission = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
     config = effective["config"]
+    validate_objective_claims(config["objectives"], submission["claims"])
     # Strict validation at trust boundaries; unrelated authoring files are not
     # part of the evaluation and do not need a second repository inventory.
     cases = checker_cases(root, effective)
@@ -203,11 +207,12 @@ def check(root):
         tracks = current.get("tracks", []) if type(current) is dict else []
         if not config["objectives"] or type(tracks) is not list or len(tracks) != 1 or type(tracks[0]) is not dict:
             raise VerifierError("single_track_benchmark_required")
+        submission_references_enabled(tracks[0].get("submissionAdmission"))
         expected = manifest(config)["tracks"][0]
         fields = ("objectives", "paretoPolicies", "editablePaths", "maxSubmissionBytes", "direction")
         if current.get("schemaVersion") != 2 or any(canonical(tracks[0].get(k)) != canonical(expected[k]) for k in fields):
             raise VerifierError("stale_benchmark_run_github_command")
-    return {"valid": True, "submission_files": len(intake["data"]["files"]), "checker_cases": len(cases)}
+    return {"valid": True, "submission_files": len(files), "checker_cases": len(cases)}
 
 
 def github(root, repository, revision):
@@ -217,7 +222,18 @@ def github(root, repository, revision):
     effective = load_config(root, "verifier.json", "submission")
     if not effective["config"]["objectives"]:
         raise VerifierError("yukon_requires_objective")
-    write_bytes(Path(root) / "benchmark.json", formatted(manifest(effective["config"])))
+    generated = manifest(effective["config"])
+    benchmark = Path(root) / "benchmark.json"
+    if os.path.lexists(benchmark):
+        current = read_json(benchmark)
+        tracks = current.get("tracks", []) if type(current) is dict else []
+        if type(tracks) is not list or len(tracks) != 1 or type(tracks[0]) is not dict:
+            raise VerifierError("single_track_benchmark_required")
+        if "submissionAdmission" in tracks[0]:
+            admission = tracks[0]["submissionAdmission"]
+            submission_references_enabled(admission)
+            generated["tracks"][0]["submissionAdmission"] = admission
+    write_bytes(benchmark, formatted(generated))
     files = ["benchmark.json"]
     for name in ("benchmark.yml", "checker-tests.yml"):
         workflow = read_bytes(TEMPLATES / name).decode().replace("VERIFIER_REPOSITORY", repository).replace("VERIFIER_REVISION", revision)

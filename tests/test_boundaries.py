@@ -157,6 +157,7 @@ class Boundaries(unittest.TestCase):
 
     def test_omitted_effort_preserves_normalized_config_bytes(self):
         # Provider omission bytes remain fixed; the full fixture includes atomic policy prose.
+        # Dependency policy normalization additionally pins evidence_policy.
         with example() as (_, effective, _):
             raw = copy.deepcopy(effective['config'])
             raw['provider'] = {'model':'test-model'}
@@ -166,5 +167,5 @@ class Boundaries(unittest.TestCase):
                 b'"model":"test-model","response_format":"json_schema","timeout_seconds":60}')
             self.assertNotIn('reasoning_effort', normalized['provider'])
             self.assertEqual(digest(normalized),
-                'efab4299c72272d4858b8d284dca35279b31786e12b2c1235dba2dbeda85d0f1')
+                '63f251db4cb5933791f19416027c6c4994433da7f01255a9f41e180a182b13d5')
             self.assertEqual(canonical(normalize(normalized)), canonical(normalized))

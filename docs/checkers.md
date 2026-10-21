@@ -143,8 +143,9 @@ organizers must review their checker implementation and target selection.
 
 The collision example is explicitly a **toy eight-bit truncation of SHA-256**.
 It verifies only a concrete pair and its total UTF-8 bytes. It does not implement
-full HashSmash, admission or its reviewer committee. Every non-null Yukon
-admission policy remains unsupported. Local `yukon run` remains unsupported;
+full HashSmash or its reviewer committee. The supported versioned
+[submission admission](submission-admission.md) controls accepted-submission
+references; other admission dialects are rejected. Local `yukon run` remains unsupported;
 use the separated phase CLI or existing six-job hosted orchestration.
 
 ## Offline example

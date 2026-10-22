@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 
 from .errors import VerifierError
+from .identity import submission_key
 from .evidence import POLICY_ID
 from .files import utf8
 from .jsonutil import canonical, digest, integer, keys, loads, sha, text
@@ -45,14 +46,16 @@ def platform_id(value):
 
 
 def references(values, limit=MAX_IMPORTS):
-    seen = set()
+    seen, normalized = set(), []
     for value in array(values, limit):
         keys(value, {"submission_id"})
         platform_id(value["submission_id"])
-        if value["submission_id"] in seen:
+        sid = submission_key(value["submission_id"])
+        if sid in seen:
             raise VerifierError("duplicate_prior_reference")
-        seen.add(value["submission_id"])
-    return sorted(values, key=lambda r: r["submission_id"])
+        seen.add(sid)
+        normalized.append({"submission_id": sid})
+    return sorted(normalized, key=lambda r: r["submission_id"])
 
 
 def consumer_identity(value):
@@ -61,6 +64,11 @@ def consumer_identity(value):
         if key != "challenge_id" or item is not None:
             platform_id(item)
     return value
+
+
+def consumer_key(value):
+    identity = consumer_identity(value)
+    return {**identity, "submission_id": submission_key(identity["submission_id"])}
 
 
 def completed_ns(value):
@@ -132,7 +140,7 @@ def validate_bundle(bundle):
     for field in ("config", "submission", "verifier", "context"):
         hash_value(bindings[field])
     ancestors = references(bundle["ancestors"], MAX_ANCESTORS)
-    declared = manifest.get("prior_results", [])
+    declared = references(manifest.get("prior_results", []))
     if not {r["submission_id"] for r in declared} <= {r["submission_id"] for r in ancestors}:
         raise VerifierError("prior_ancestor_binding")
     return bundle
@@ -193,25 +201,26 @@ def intake_imports(snapshot, manifest, eid, created):
     if type(snapshot["version"]) is not int or snapshot["version"] != 1:
         raise VerifierError("prior_snapshot_version")
     platform_id(snapshot["snapshot_id"])
-    consumer = consumer_identity(snapshot["consumer"])
+    consumer = consumer_key(snapshot["consumer"])
     pins = {}
     for ref in array(snapshot["references"], MAX_IMPORTS):
         keys(ref, {"submission_id", "bundle_sha256"})
         platform_id(ref["submission_id"])
         hash_value(ref["bundle_sha256"])
-        if ref["submission_id"] in pins:
+        sid = submission_key(ref["submission_id"])
+        if sid in pins:
             raise VerifierError("duplicate_prior_reference")
-        pins[ref["submission_id"]] = ref["bundle_sha256"]
+        pins[sid] = ref["bundle_sha256"]
     if set(pins) != {r["submission_id"] for r in requested}:
         raise VerifierError("prior_reference_snapshot_binding")
     selected, ancestry, source_ids, graph, total = [], set(), set(), {}, 0
     for source in array(snapshot["sources"], MAX_IMPORTS):
         bundle = validate_source(source)
-        sid = source["submission_id"]
+        sid = submission_key(source["submission_id"])
         if sid in source_ids:
             raise VerifierError("duplicate_prior_submission")
         source_ids.add(sid)
-        if sid == consumer["submission_id"] or any(a["submission_id"] in (sid, consumer["submission_id"]) for a in bundle["ancestors"]):
+        if sid == consumer["submission_id"] or any(submission_key(a["submission_id"]) in (sid, consumer["submission_id"]) for a in bundle["ancestors"]):
             raise VerifierError("prior_self_or_cyclic_import")
         encoded = source["bundle"]
         if pins.get(sid) != encoded["sha256"]:
@@ -219,7 +228,7 @@ def intake_imports(snapshot, manifest, eid, created):
         total += encoded["bytes"]
         if total > MAX_IMPORT_BYTES:
             raise VerifierError("prior_import_byte_limit")
-        graph[sid] = {a["submission_id"] for a in bundle["ancestors"]}
+        graph[sid] = {a["submission_id"] for a in references(bundle["ancestors"], MAX_ANCESTORS)}
         ancestry.update(graph[sid])
         selected.append({"submission_id": sid, "manifest": bundle["source"]["manifest"],
                          "judgment": bundle["judgment"], "provenance": {
@@ -242,7 +251,7 @@ def intake_imports(snapshot, manifest, eid, created):
         if item["accepted"] is not True:
             raise VerifierError("prior_dependency_changed")
         attested.append({"submission_id": item["submission_id"]})
-    references(attested, MAX_ANCESTORS)
+    attested = references(attested, MAX_ANCESTORS)
     if {a["submission_id"] for a in attested} != ancestry - source_ids:
         raise VerifierError("prior_ancestor_snapshot")
     ancestry.update(source_ids)

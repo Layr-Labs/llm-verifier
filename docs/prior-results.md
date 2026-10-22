@@ -11,6 +11,15 @@ owner registrations, copied artifacts, source allowlists, reference credentials 
 per-reference actions. A prior lemma may be valid without a score. Prior scores
 and checker witnesses cannot replace current scores/checks.
 
+Supported hyphenated UUID submission IDs identify the same submission regardless
+of hex-letter case. This applies to duplicate detection, accepted support, ancestry
+and `prior:` evidence references. The native UUID dialect uses versions 1–8 and
+variants 8/9/a/b (plus nil and lowercase max); other opaque identifiers retain exact
+case, including compact or unsupported UUID-shaped tokens. Source file paths and
+run IDs also remain case-sensitive. Original consumer/source manifest bytes,
+saved snapshots, provenance and judgment text are preserved; only comparison keys
+and derived reference/ancestry lists use canonical UUID spelling.
+
 `GET /api/submissions/:id/accepted-results` returns discovery through existing
 visibility checks. `llm-verifier inspect-results --discovery FILE|-` displays the
 original manifest bytes and atomic verdict. Discovery is informational; it never

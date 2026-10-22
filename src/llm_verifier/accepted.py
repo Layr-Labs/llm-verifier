@@ -14,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .errors import InfrastructureError, VerifierError
 from .jsonutil import canonical, keys, loads, text
-from .prior import consumer_identity, references
+from .prior import consumer_identity, consumer_key, references
 
 MAX_RESPONSE = 2 * 1024 * 1024
 MAX_REQUEST = 16384
@@ -64,7 +64,7 @@ def resolve(context, requested):
     if len(request_token) > 16384 or any(ord(c) < 33 for c in request_token):
         raise InfrastructureError("prior_workflow_identity_unavailable")
     value = PlatformTransport().request(context, body, request_url, request_token)
-    if canonical(value.get("consumer")) != canonical(identity):
+    if canonical(consumer_key(value.get("consumer"))) != canonical(consumer_key(identity)):
         raise VerifierError("prior_consumer_binding")
     return value
 

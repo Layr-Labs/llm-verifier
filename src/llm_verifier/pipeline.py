@@ -6,6 +6,7 @@ import time
 from .artifacts import seal, verify_envelope, verify_intake
 from .checks import check_validation, enforce_score_gate, execution_source, run_identity, score_gate
 from .errors import InfrastructureError, VerifierError
+from .identity import submission_key
 from .files import clear_output, write_json
 from .jsonutil import canonical, digest, integer, keys, number
 from .judgment import response_schema, validate_decision, yukon
@@ -58,7 +59,7 @@ def evidence_refs(intake, initial, followup=None):
     for report in (initial, followup):
         if report is not None:
             refs.extend(run["id"] for run in report["data"]["runs"])
-    refs.extend("prior:" + ref["submission_id"] for ref in intake["data"]["manifest"].get("prior_results", []))
+    refs.extend("prior:" + submission_key(ref["submission_id"]) for ref in intake["data"]["manifest"].get("prior_results", []))
     return refs
 
 

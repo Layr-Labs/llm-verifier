@@ -12,7 +12,7 @@ from .files import snapshot
 from .jsonutil import canonical, digest, keys, loads, sha
 from .submission import manifest_from
 from .scoring import validate_objective_claims
-from .prior import intake_imports
+from .prior import intake_imports, consumer_key
 from .jsonutil import integer
 
 HASH = re.compile(r"[a-f0-9]{64}\Z")
@@ -70,7 +70,7 @@ def intake_snapshot(effective, candidate_root, context=None, simulation=False, *
         from .accepted import context_identity, resolve
         context["accepted_results"] = context_identity(accepted_results_context)
         prior_snapshot = resolve(accepted_results_context, manifest.get("prior_results", []))
-        if canonical(prior_snapshot.get("consumer")) != canonical(context["accepted_results"]):
+        if canonical(consumer_key(prior_snapshot.get("consumer"))) != canonical(consumer_key(context["accepted_results"])):
             raise VerifierError("prior_consumer_binding")
     bindings = {"evaluation_id": uuid.uuid4().hex, "config": digest(effective),
                 "submission": digest(files), "verifier": code["content_sha256"], "context": digest(context)}
@@ -97,7 +97,7 @@ def verify_intake(intake, expected=None):
     integer(data["created_at_ns"], 1, 2**63 - 1)
     intake_imports(data["prior_snapshot"], manifest, bindings["evaluation_id"], data["created_at_ns"])
     if data["prior_snapshot"] is not None:
-        if canonical(data["context"].get("accepted_results")) != canonical(data["prior_snapshot"]["consumer"]):
+        if canonical(consumer_key(data["context"].get("accepted_results"))) != canonical(consumer_key(data["prior_snapshot"]["consumer"])):
             raise VerifierError("prior_consumer_binding")
     elif "accepted_results" in data["context"]:
         raise VerifierError("prior_consumer_binding")

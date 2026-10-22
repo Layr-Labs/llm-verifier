@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 from .artifacts import intake_snapshot, verify_intake
-from .config import load_config
+from .config import load_config, resolve_submission
 from .errors import VerifierError
 from .files import clear_output, outside, read_json, relative, write_json
 from .jsonutil import loads
@@ -91,6 +91,8 @@ def run(args):
             result = scaffold.check(args.root) if args.command == "check" else scaffold.test_checkers(args.root)
         print(canonical(result).decode())
         return
+    if args.command in {"intake", "simulate"}:
+        args.submission = resolve_submission(args.root, args.config, args.submission)
     if args.command == "finalize":
         if args.score_dir:
             if not args.score_path:

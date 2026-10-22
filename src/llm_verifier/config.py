@@ -26,7 +26,8 @@ LIMITS = {
     "memory_mb": (256, 64, 1024), "cpus": (1, 1, 4),
     "pids": (32, 8, 128), "tmpfs_mb": (16, 1, 64),
     "max_prompt_bytes": (2097152, 1024, 8388608),
-    "total_review_seconds": (180, 1, 2400), "total_provider_requests": (4, 1, 6),
+    "total_review_seconds": (180, 1, 2400), "total_provider_requests": (4, 1, 64),
+    "total_review_tokens": (262144, 128, 2097152),
 }
 PROVIDER_DEFAULTS = {"max_completion_tokens": 8192, "timeout_seconds": 60, "max_attempts": 2,
                      "max_response_bytes": 262144, "response_format": "json_schema"}
@@ -38,7 +39,10 @@ def identifier(value):
 
 
 def normalize(raw):
-    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy"})
+    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy", "judging"})
+    if "judging" in raw:
+        from .judges import selection
+        selection(raw["judging"])
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise VerifierError("unsupported_config_version")
     identifier(raw["id"])
@@ -80,9 +84,16 @@ def normalize(raw):
             raise VerifierError("unsupported_default_policy")
     supplied = raw.get("limits", {})
     keys(supplied, set(), set(LIMITS))
-    limits = {name: supplied.get(name, spec[0]) for name, spec in LIMITS.items()}
+    if "judging" not in raw and "total_review_tokens" in supplied:
+        raise VerifierError("review_tokens_require_judging")
+    limits = {name: supplied.get(name, spec[0]) for name, spec in LIMITS.items()
+              if name != "total_review_tokens" or "judging" in raw}
+    if "judging" in raw:
+        limits["total_provider_requests"] = supplied.get("total_provider_requests", 24)
+        limits["total_review_seconds"] = supplied.get("total_review_seconds", 1800)
     for name, (_, low, high) in LIMITS.items():
-        integer(limits[name], low, high)
+        if name in limits:
+            integer(limits[name], low, high)
     checkers = raw.get("checkers", [])
     if type(checkers) is not list or len(checkers) > 16:
         raise VerifierError("checker_count")
@@ -121,8 +132,13 @@ def normalize(raw):
     keys(runtime, {"image", "platform"})
     if type(runtime["image"]) is not str or not IMAGE.fullmatch(runtime["image"]) or runtime["platform"] != "linux/amd64":
         raise VerifierError("pinned_python_runtime_required")
-    keys(raw["provider"], {"model"}, set(PROVIDER_DEFAULTS) | {"reasoning_effort", "background"})
-    provider = {**PROVIDER_DEFAULTS, **raw["provider"]}
+    provider = normalize_provider(raw["provider"])
+    return loads(canonical({**raw, "evidence_policy": POLICY_ID, "limits": limits, "runtime": runtime, "provider": provider}))
+
+
+def normalize_provider(raw):
+    keys(raw, {"model"}, set(PROVIDER_DEFAULTS) | {"reasoning_effort", "background"})
+    provider = {**PROVIDER_DEFAULTS, **raw}
     # No fallback aliases, list of models or implicitly selected user defaults.
     if (type(provider["model"]) is not str
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}", provider["model"])
@@ -141,7 +157,7 @@ def normalize(raw):
         or provider["reasoning_effort"] not in ("none", "minimal", "low", "medium", "high", "xhigh", "max")
     ):
         raise VerifierError("provider_settings")
-    return loads(canonical({**raw, "evidence_policy": POLICY_ID, "limits": limits, "runtime": runtime, "provider": provider}))
+    return loads(canonical(provider))
 
 
 def submission_references_enabled(admission):
@@ -185,12 +201,17 @@ def load_config(root, config_path, submission_path, evaluation=None):
     evaluation, instructions = select_evaluation(config, evaluation)
     paths = {path for checker in config.get("checkers", []) for path in checker["files"]}
     checker_files = snapshot_declared(root, paths, root / submission_path, config["limits"])
-    return {"config": config, "rules": rules, "evaluation": evaluation, "policy_instructions": instructions,
-            "checker_files": checker_files}
+    effective = {"config": config, "rules": rules, "evaluation": evaluation, "policy_instructions": instructions,
+                 "checker_files": checker_files}
+    if "judging" in config:
+        from .judges import load_judging
+        effective["judging"] = load_judging(root, config["judging"], root / submission_path,
+                                          config["provider"], config["limits"])
+    return effective
 
 
 def verify_effective(effective):
-    keys(effective, {"config", "rules", "evaluation", "policy_instructions", "checker_files"})
+    keys(effective, {"config", "rules", "evaluation", "policy_instructions", "checker_files"}, {"judging"})
     if canonical(normalize(effective["config"])) != canonical(effective["config"]):
         raise VerifierError("noncanonical_config")
     text(effective["rules"], 131072)
@@ -201,3 +222,9 @@ def verify_effective(effective):
     validate_files(effective["checker_files"], effective["config"]["limits"], empty=True)
     if set(effective["checker_files"]) != paths:
         raise VerifierError("checker_bundle_binding")
+    if ("judging" in effective) != ("judging" in effective["config"]):
+        raise VerifierError("judge_configuration_required")
+    if "judging" in effective:
+        from .judges import verify_judging
+        verify_judging(effective["judging"], effective["config"]["judging"],
+                       effective["config"]["provider"], effective["config"]["limits"])

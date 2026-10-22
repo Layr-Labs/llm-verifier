@@ -41,7 +41,8 @@ def prepare(args):
     outside(root / score_path, root / submission)
     # The score must not overwrite protected config or rules either.
     effective = load_config(root, args.config, submission, loads(args.evaluation) if args.evaluation else None)
-    if score_path in {args.config, effective["config"]["rules_path"], *effective["checker_files"]}:
+    if score_path in {args.config, effective["config"]["rules_path"], *effective["checker_files"],
+                      *effective.get("judging", {}).get("files", {})}:
         raise VerifierError("score_path_overwrites_config")
     outside(args.out, root / submission)
     context = {"kind": "github-actions", "candidate_revision": args.candidate_revision,

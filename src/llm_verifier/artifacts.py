@@ -21,8 +21,10 @@ HASH = re.compile(r"[a-f0-9]{64}\Z")
 def implementation():
     root = Path(__file__).parent
     content = {p.name: sha(p.read_bytes()) for p in sorted(root.glob("*.py"))}
+    content.update({str(p.relative_to(root)): sha(p.read_bytes())
+                    for p in sorted((root / "judges").rglob("*")) if p.is_file()})
     return {"package": "llm-verifier", "version": __version__, "content_sha256": digest(content),
-            "scope": "all installed llm_verifier/*.py source bytes", "files": content}
+            "scope": "all installed llm_verifier/*.py and judges/** source bytes", "files": content}
 
 
 def seal(stage, bindings, data, parents=(), simulation=False):

@@ -17,6 +17,7 @@ from .workflow import github_output, prepare, prepare_runtime
 def parser():
     p = argparse.ArgumentParser(prog="llm-verifier", description="Snapshot, execute, review and finalize in separate trust domains.")
     sub = p.add_subparsers(dest="command", required=True)
+    sub.add_parser("judges", help="List bundled judge personas and committee profiles")
     cmd = sub.add_parser("inspect-results", help="Display result selectors from a Yukon discovery response; never authorizes intake")
     cmd.add_argument("--discovery", required=True, help="GET /api/submissions/:id/accepted-results response file, or - for stdin")
     cmd = sub.add_parser("init", help="Create editable challenge source files")
@@ -89,6 +90,11 @@ def parser():
 
 
 def run(args):
+    if args.command == "judges":
+        from .judges import catalog
+        from .jsonutil import canonical
+        print(canonical(catalog()).decode())
+        return
     if args.command == "inspect-results":
         from .prior import discovery_results
         from .jsonutil import canonical
@@ -175,7 +181,7 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         run(args)
-        if args.command != "inspect-results":
+        if args.command not in {"inspect-results", "judges"}:
             print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command == "simulate" else ""))
         return 0
     except VerifierError as exc:

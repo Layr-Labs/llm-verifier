@@ -59,8 +59,10 @@ def verify_pair(fixtures):
             for name in ('atomic-finite','atomic-finite-reaccepted')]}
 
 
-def verify(fixtures, raw_sources=None):
-    pair=verify_pair(fixtures)
+def verify(fixtures, raw_sources=None, *, reorg=False, artifacts=None):
+    pair=None if reorg else verify_pair(fixtures)
+    if artifacts is not None:
+        Path(artifacts).mkdir(parents=True,exist_ok=False)
     captured={str(p.relative_to(fixtures)):sha(p.read_bytes()) for p in sorted(Path(fixtures).rglob('*.json'))}
     report={'runtime':implementation()['content_sha256'],'model_called':False,
             'admission_scope':'Explicit enabled test consumer; not historical native admission verification','cases':{}}
@@ -79,7 +81,12 @@ def verify(fixtures, raw_sources=None):
                 intake=intake_snapshot(effective,candidate/'submission',accepted_results_context=context)
             verify_intake(intake)
             records,ancestors=intake_imports(snapshot,manifest,intake['bindings']['evaluation_id'],intake['data']['created_at_ns'])
-            initial,first=direct(candidate,intake,consuming_decision(candidate))
+            decision=consuming_decision(candidate)
+            if reorg:
+                available={'prior:'+r['submission_id'] for r in records}
+                decision['judgment']['evidence_refs']=[r for r in decision['judgment']['evidence_refs'] if not r.startswith('prior:') or r in available]
+                decision['judgment']['reason']='Independent current proof and available accepted sources establish every declared claim.'
+            initial,first=direct(candidate,intake,decision)
             dossier=pipeline.finalize(intake,initial,first,candidate/'score.json',candidate/'dossier.json',results_path=candidate/'accepted-results.json')
             for record,source in zip(records,sorted(snapshot['sources'],key=lambda s:s['submission_id'])):
                 from llm_verifier.prior import source_bundle
@@ -90,21 +97,44 @@ def verify(fixtures, raw_sources=None):
                     assert any(p.read_bytes()==raw for p in Path(raw_sources).glob('*.json')), 'Source bytes must match original exported artifact'
             exported=read_json(candidate/'accepted-results.json')
             assert exported['source']['manifest']==intake['data']['files']['submission.json']
+            assert exported['ancestors']==ancestors
             assert read_json(candidate/'accepted-results-receipt.json')=={'version':1,'snapshot_id':snapshot['snapshot_id']}
-            report['cases'][root.name]={'response_sha256':sha(response_bytes),'raw_sha256':snapshot['sources'][0]['bundle']['sha256'],
+            if artifacts is not None:
+                output=Path(artifacts)/root.name/'accepted'
+                for filename in ('score.json','dossier.json','accepted-results.json','accepted-results-receipt.json'):
+                    write_json(output/filename,read_json(candidate/filename))
+            report['cases'][root.name]={'response_sha256':sha(response_bytes),'raw_sha256':snapshot['sources'][0]['bundle']['sha256'] if snapshot['sources'] else None,
                 'byte_roundtrip':True,'response_decoded':True,'ancestry_count':len(ancestors),
                 'submission_ids':[r['submission_id'] for r in records],
                 'source_digests':[r['provenance']['original_source']['submission_sha256'] for r in records],
                 'manifest_sha256':[r['manifest']['sha256'] for r in records],
                 'downstream_valid':dossier['data']['judgment']['valid'],'receipt_checked':True}
-    assert pair==verify_pair(fixtures)
+            if reorg:
+                unavailable=[r for r in snapshot['references'] if 'unavailable' in r]
+                assert not {r['submission_id'] for r in unavailable} & {a['submission_id'] for a in ancestors}
+                decision['judgment'].update(valid=False,reason='Independent current evidence does not establish the declared claims.')
+                rejected_initial,rejected_review=direct(candidate,intake,decision)
+                rejected=pipeline.finalize(intake,rejected_initial,rejected_review,candidate/'score.json',candidate/'dossier.json',results_path=candidate/'accepted-results.json')
+                assert rejected['data']['judgment']['valid'] is False
+                assert not (candidate/'accepted-results.json').exists()
+                assert read_json(candidate/'accepted-results-receipt.json')=={'version':1,'snapshot_id':snapshot['snapshot_id']}
+                if artifacts is not None:
+                    output=Path(artifacts)/root.name/'rejected'
+                    for filename in ('score.json','dossier.json','accepted-results-receipt.json'):
+                        write_json(output/filename,read_json(candidate/filename))
+                report['cases'][root.name].update(unavailable=unavailable,independent_acceptance_lineage=ancestors,rejection_and_receipt_checked=True)
+    if pair is not None:
+        assert pair==verify_pair(fixtures)
     assert captured=={str(p.relative_to(fixtures)):sha(p.read_bytes()) for p in sorted(Path(fixtures).rglob('*.json'))}, 'Evidence changed during verification'
-    for name,index in [('atomic-finite',0),('atomic-finite-reaccepted',1)]:
-        assert report['cases'][name]['submission_ids']==[pair['submission_id']]
-        assert report['cases'][name]['source_digests']==[pair['source_sha256']]
-        assert report['cases'][name]['manifest_sha256']==[pair['manifest_sha256']]
-        assert report['cases'][name]['response_sha256']==pair['response_sha256'][index]
-    report['stable_reacceptance_pair']=pair
+    if pair is not None:
+        for name,index in [('atomic-finite',0),('atomic-finite-reaccepted',1)]:
+            assert report['cases'][name]['submission_ids']==[pair['submission_id']]
+            assert report['cases'][name]['source_digests']==[pair['source_sha256']]
+            assert report['cases'][name]['manifest_sha256']==[pair['manifest_sha256']]
+            assert report['cases'][name]['response_sha256']==pair['response_sha256'][index]
+        report['stable_reacceptance_pair']=pair
+    else:
+        assert any(case['unavailable'] for case in report['cases'].values()), 'A real unavailable-source response is required'
     report['input_file_sha256']=captured
     return report
 
@@ -112,5 +142,7 @@ def verify(fixtures, raw_sources=None):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixtures',required=True);parser.add_argument('--raw-sources');parser.add_argument('--out',required=True)
-    args=parser.parse_args();write_json(args.out,verify(args.fixtures,args.raw_sources))
+    parser.add_argument('--reorg',action='store_true',help='Validate independent acceptance/rejection for real unavailable-source responses instead of the stable pair')
+    parser.add_argument('--artifacts',help='New nonexisting output directory for actual installed exports and receipt controls')
+    args=parser.parse_args();write_json(args.out,verify(args.fixtures,args.raw_sources,reorg=args.reorg,artifacts=args.artifacts))
     print('Actual Yukon snapshots passed installed intake, review, export and receipt checks.')

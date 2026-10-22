@@ -35,10 +35,13 @@ effective-config digest. `YUKON_EVALUATION` is a closed object:
 ```
 
 At least one field must be true. Missing evaluation uses protected defaults and
-requests both fields. Omitted/null admission means no additional admission
-policy. Every non-null admission value, including `{}`, is unsupported and
-fails before any execution/model call. Future admission dialects need an explicit
-version and implementation; no opaque policy is silently ignored.
+requests both fields. Omitted/null admission disables accepted-submission
+references while allowing normal reference-free work. The only supported non-null
+[admission dialect](submission-admission.md) is
+`{"version":1,"submissionReferencesEnabled":true|false}` (with a JSON boolean).
+Unknown fields, types and versions fail before execution/model work. The exact
+received evaluation, including omission versus explicit null, stays bound in
+intake; later phases and reorgs do not read live admission settings.
 
 Locally, zero objectives are permitted only with `allow_unscored: true`. Yukon
 requires 1–8 objectives, so do not publish a zero-objective manifest. The proof
@@ -244,3 +247,16 @@ temporary response state for asynchronous execution/polling (roughly ten minutes
 This differs from a foreground request with no asynchronous state. Organizers
 must select this mode explicitly and apply their account-level data controls:
 https://developers.openai.com/api/docs/guides/background
+
+## Scientific evidence and prior results
+
+`evidence_policy` is optional in authored config and always normalizes to
+`atomic-claims-v1`; any other value is rejected. This policy cannot be
+relaxed by challenge prose or selected instructions. The
+[mandatory evidence policy](evidence-policy.md) applies to every judgment.
+
+The submission may declare `prior_results` as up to 16 exact
+`{submission_id}` records. [Automatic resolution](prior-results.md)
+uses the trusted platform context at intake. There is no `prior_imports` config,
+candidate URL/file import, owner allowlist or reference-specific credential.
+Editable source checks validate selectors without resolving them.

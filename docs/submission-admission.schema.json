@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Submission admission v1",
+  "description": "Public consumer-track submissionAdmission, passed as YUKON_EVALUATION.admission. Missing/null disables accepted-submission references; executable validation also requires version to be a JSON integer token.",
+  "oneOf": [
+    {
+      "type": "null"
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "submissionReferencesEnabled"
+      ],
+      "properties": {
+        "version": {
+          "type": "integer",
+          "const": 1
+        },
+        "submissionReferencesEnabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  ]
+}

@@ -35,9 +35,9 @@ class ScriptedProvider:
             "provider_config_sha256": digest(self.config), "attempts": 1, "elapsed_seconds": 0}
 
 
-def simulate(effective, candidate, script, output):
+def simulate(effective, candidate, script, output, *, accepted_results_context=None):
     keys(script, {"initial_results", "initial_decision", "followup_results", "final_decision"})
-    intake = intake_snapshot(effective, candidate, simulation=True)
+    intake = intake_snapshot(effective, candidate, simulation=True, accepted_results_context=accepted_results_context)
     initial = execute(intake, runner=ScriptedRunner(script["initial_results"]))
     first = review(intake, initial, provider=ScriptedProvider(effective["config"]["provider"], script["initial_decision"]))
     followup = final = None

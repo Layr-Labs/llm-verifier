@@ -8,6 +8,7 @@ from .files import outside, read_bytes, relative, snapshot_declared, utf8, valid
 from .input_schema import validate_schema
 from .jsonutil import canonical, integer, keys, loads, number, text
 from .scoring import validate_sources
+from .evidence import POLICY_ID
 
 DEFAULT_IMAGE = "python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301"
 IMAGE = re.compile(r"(?:docker\.io/library/)?python:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}\Z")
@@ -37,10 +38,12 @@ def identifier(value):
 
 
 def normalize(raw):
-    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers"})
+    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy"})
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise VerifierError("unsupported_config_version")
     identifier(raw["id"])
+    if raw.get("evidence_policy", POLICY_ID) != POLICY_ID:
+        raise VerifierError("mandatory_evidence_policy")
     relative(raw["rules_path"])
     text(raw["review_standard"], 2000)
     if type(raw["allow_unscored"]) is not bool:
@@ -138,7 +141,18 @@ def normalize(raw):
         or provider["reasoning_effort"] not in ("none", "minimal", "low", "medium", "high", "xhigh", "max")
     ):
         raise VerifierError("provider_settings")
-    return loads(canonical({**raw, "limits": limits, "runtime": runtime, "provider": provider}))
+    return loads(canonical({**raw, "evidence_policy": POLICY_ID, "limits": limits, "runtime": runtime, "provider": provider}))
+
+
+def submission_references_enabled(admission):
+    """Validate the public admission dialect; absence never enables references."""
+    if admission is None:
+        return False
+    if (type(admission) is not dict or set(admission) != {"version", "submissionReferencesEnabled"}
+            or type(admission["version"]) is not int or admission["version"] != 1
+            or type(admission["submissionReferencesEnabled"]) is not bool):
+        raise VerifierError("unsupported_admission_policy")
+    return admission["submissionReferencesEnabled"]
 
 
 def select_evaluation(config, evaluation=None):
@@ -149,10 +163,7 @@ def select_evaluation(config, evaluation=None):
     keys(evaluation["fields"], {"scores", "validity"})
     if any(type(v) is not bool for v in evaluation["fields"].values()) or not any(evaluation["fields"].values()):
         raise VerifierError("evaluation_fields")
-    # Deliberately explicit. A future admission dialect must receive a version;
-    # arbitrary challenge admission JSON is never silently ignored.
-    if evaluation.get("admission") is not None:
-        raise VerifierError("unsupported_admission_policy")
+    submission_references_enabled(evaluation.get("admission"))
     instructions = {}
     for field in ("scoring", "validity"):
         selected = canonical(evaluation["policies"][field])

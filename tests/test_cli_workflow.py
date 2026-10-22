@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from llm_verifier.cli import main
 from llm_verifier.files import read_json, write_json
-from tests.support import REPO, example, direct
+from tests.support import REPO, example, direct, fill_toy
 
 
 class CLI(unittest.TestCase):
@@ -74,6 +74,28 @@ class Workflow(unittest.TestCase):
         self.assertIn('always() && needs.prepare.result',text)
         self.assertIn('CALLED_WORKFLOW: ${{ toJSON(job) }}',text)
         self.assertNotIn('simulate ',text)
+
+    def test_automatic_context_permission_and_receipt_wiring(self):
+        from llm_verifier.scaffold import github, initialize
+        text=(REPO/'.github/workflows/verify.yml').read_text()
+        self.assertEqual(text.count('id-token: write'),1)
+        prepare=text.split('  prepare:',1)[1].split('  experiments:',1)[0]
+        self.assertIn('id-token: write',prepare)
+        self.assertIn('YUKON_ACCEPTED_RESULTS: ${{ inputs.yukon_accepted_results }}',prepare)
+        remaining=text.split('  experiments:',1)[1]
+        self.assertNotIn('YUKON_ACCEPTED_RESULTS',remaining)
+        self.assertNotIn('ACTIONS_ID_TOKEN',remaining)
+        self.assertIn('--results "$RUNNER_TEMP/results/accepted-results.json"',remaining)
+        self.assertIn('name: verifier-accepted-results',remaining)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'challenge'
+            initialize(root,'test','test-model'); fill_toy(root)
+            github(root,'organizer/verifier','a'*40)
+            caller=(root/'.github/workflows/benchmark.yml').read_text()
+        self.assertIn('id-token: write',caller)
+        self.assertIn('      yukon_accepted_results:',caller)
+        self.assertIn('      yukon_accepted_results: ${{ inputs.yukon_accepted_results }}',caller)
+        self.assertNotIn('ACCEPTED_RESULTS_TOKEN',caller)
 
     def test_workflow_pin_guard_rejects_mismatch_without_checkout(self):
         # Execute the actual bootstrap shell block with dummy trusted identities;

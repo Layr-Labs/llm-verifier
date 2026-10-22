@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "title": "Composed square bound",
+  "claims": [
+    "For all real a,b, (a+b)^2 <= 2(a^2+b^2)."
+  ],
+  "experiments": [],
+  "prior_results": []
+}

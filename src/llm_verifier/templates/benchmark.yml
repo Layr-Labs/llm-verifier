@@ -2,12 +2,18 @@ name: Benchmark
 on:
   workflow_dispatch:
     inputs:
+      yukon_accepted_results:
+        description: Yukon automatic accepted-result context
+        required: false
+        type: string
+        default: ''
       yukon_evaluation:
         type: string
         required: false
         default: ''
 permissions:
   contents: read
+  id-token: write
 jobs:
   verify:
     uses: VERIFIER_REPOSITORY/.github/workflows/verify.yml@VERIFIER_REVISION
@@ -18,6 +24,7 @@ jobs:
       config_path: verifier.json
       submission_path: submission
       score_path: .yukon/score.json
+      yukon_accepted_results: ${{ inputs.yukon_accepted_results }}
       yukon_evaluation: ${{ inputs.yukon_evaluation }}
     secrets:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

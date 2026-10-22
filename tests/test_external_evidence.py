@@ -97,3 +97,11 @@ class ExternalEvidence(unittest.TestCase):
             intake = intake_snapshot(load_config(root, 'verifier.json', 'submission'), root/'submission')
             with self.assertRaisesRegex(InfrastructureError, 'full_evidence_context_budget'):
                 pipeline.review_material(intake, pipeline.execute(intake))
+
+
+class AtomicPolicyComposition(unittest.TestCase):
+    def test_atomic_policy_preserves_complete_reviewed_wording(self):
+        from llm_verifier.evidence import POLICY as atomic_policy
+        self.assertEqual(atomic_policy.count(POLICY), 1)
+        self.assertEqual(hashlib.sha256(atomic_policy.encode()).hexdigest(),
+                         "817206858944ef2f2811c3ddd98bf5c38e5121b8f2aa739d6f6dacf370de4241")

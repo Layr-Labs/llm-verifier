@@ -3,6 +3,7 @@
 import sys
 
 from .errors import VerifierError
+from .identity import evidence_key
 from .jsonutil import keys, number, text
 from .submission import followup_plan
 
@@ -25,9 +26,9 @@ def validate_judgment(judgment, config, evidence_refs):
             raise VerifierError("judgment_list_limit")
         for value in values:
             text(value, 8000)
-        if len(set(values)) != len(values):
+        if len({evidence_key(value) for value in values}) != len(values):
             raise VerifierError("duplicate_judgment_item")
-    if not set(judgment["evidence_refs"]) <= set(evidence_refs):
+    if not {evidence_key(value) for value in judgment["evidence_refs"]} <= {evidence_key(value) for value in evidence_refs}:
         raise VerifierError("unknown_evidence_reference")
     if judgment["valid"] and not judgment["evidence_refs"]:
         raise VerifierError("accepted_claim_evidence_required")

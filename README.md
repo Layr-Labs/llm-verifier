@@ -66,6 +66,10 @@ For agents, start with the shared [challenge-authoring skill](skills/llm-verifie
 The [atomic decision contract](docs/atomic-claims.md) also applies without references.
 Solvers can cite exact accepted prior results through the
 [automatic reference workflow](docs/prior-results.md), with no owner import setup.
+For candidate preparation, use the shared [solver guide](docs/solving.md) and thin
+[solver skill](skills/llm-verifier-solver/SKILL.md). Generated participant README
+and AGENTS files carry a short checklist and same-revision discovery pointers;
+`github` refreshes them to the supplied immutable pin while preserving author prose.
 
 ## Independent phases
 

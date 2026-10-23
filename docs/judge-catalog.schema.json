@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Judge persona and profile catalog v1",
+  "description": "Local catalogs must use local: IDs; the installed library uses builtin:. Unique IDs and file budgets are validated at intake.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "personas": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(builtin|local):[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "instructions": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16000
+          },
+          "instructions_path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "Safe relative POSIX path, no traversal, symlinks, .git, controls or special files; additional runtime checks."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "instructions"
+            ]
+          },
+          {
+            "required": [
+              "instructions_path"
+            ]
+          }
+        ]
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^(builtin|local):[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+          },
+          "protocol": {
+            "enum": [
+              "single-v1",
+              "review-defense-adjudication-v1"
+            ]
+          },
+          "members": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "$ref": "#/$defs/judgeMember"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "protocol",
+          "members"
+        ]
+      }
+    }
+  },
+  "required": [
+    "version",
+    "personas",
+    "profiles"
+  ],
+  "$defs": {
+    "judgeProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,199}$",
+          "not": {
+            "pattern": "^(?:[Aa][Uu][Tt][Oo]|[Dd][Ee][Ff][Aa][Uu][Ll][Tt])$"
+          }
+        },
+        "reasoning_effort": {
+          "type": "string",
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ]
+        },
+        "max_completion_tokens": {
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 32768,
+          "default": 8192
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1200,
+          "default": 60
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3,
+          "default": 2
+        },
+        "max_response_bytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 1048576,
+          "default": 262144
+        },
+        "response_format": {
+          "enum": [
+            "json_schema",
+            "json_object"
+          ],
+          "default": "json_schema"
+        },
+        "background": {
+          "type": "boolean",
+          "description": "Opt in to bounded Responses background polling with store=false."
+        }
+      },
+      "required": []
+    },
+    "judgeMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "persona": {
+          "type": "string",
+          "pattern": "^(builtin|local):[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+        },
+        "stage": {
+          "enum": [
+            "review",
+            "defense",
+            "adjudication"
+          ]
+        },
+        "provider": {
+          "$ref": "#/$defs/judgeProvider"
+        }
+      },
+      "required": [
+        "id",
+        "persona",
+        "stage"
+      ]
+    }
+  }
+}

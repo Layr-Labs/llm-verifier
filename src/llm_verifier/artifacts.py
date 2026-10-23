@@ -20,8 +20,10 @@ HASH = re.compile(r"[a-f0-9]{64}\Z")
 def implementation():
     root = Path(__file__).parent
     content = {p.name: sha(p.read_bytes()) for p in sorted(root.glob("*.py"))}
+    content.update({str(p.relative_to(root)): sha(p.read_bytes())
+                    for p in sorted((root / "judges").rglob("*")) if p.is_file()})
     return {"package": "llm-verifier", "version": __version__, "content_sha256": digest(content),
-            "scope": "all installed llm_verifier/*.py source bytes", "files": content}
+            "scope": "all installed llm_verifier/*.py and judges/** source bytes", "files": content}
 
 
 def seal(stage, bindings, data, parents=(), simulation=False):
@@ -59,7 +61,7 @@ def preflight_snapshot(effective, candidate_root):
     """Snapshot and check a selected package without Docker, credentials or lookup."""
     verify_effective(effective)
     files = snapshot(candidate_root, effective["config"]["limits"])
-    manifest, audit = preflight_manifest(files, effective["config"])
+    manifest, audit = preflight_manifest(files, effective["config"], committee=effective.get("judging", {}).get("committee"))
     admit_submission(effective, manifest)
     return {"files": files, "manifest": manifest, **({"preprocessing": audit} if audit is not None else {})}
 
@@ -90,7 +92,8 @@ def verify_intake(intake, expected=None):
         raise VerifierError("unexpected_intake")
     keys(data, {"effective", "files", "manifest", "implementation", "context", "created_at_ns", "prior_snapshot"}, {"preprocessing"})
     verify_effective(data["effective"])
-    manifest, audit = preflight_manifest(data["files"], data["effective"]["config"])
+    manifest, audit = preflight_manifest(data["files"], data["effective"]["config"],
+                                         committee=data["effective"].get("judging", {}).get("committee"))
     if (("preprocessing" in data) != (audit is not None)
             or canonical(data.get("preprocessing")) != canonical(audit)):
         raise VerifierError("preprocessing_binding")

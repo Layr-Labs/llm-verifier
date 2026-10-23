@@ -2,20 +2,21 @@
 
 `llm_verifier` is an installable Python 3.11+ package and `llm-verifier` CLI for
 organizer-defined mathematical challenges. It snapshots a submission, captures
-bounded computational evidence in Docker, asks one OpenAI reviewer for a
+bounded computational evidence in Docker, asks an OpenAI reviewer or configured committee for a
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
-Version 0.6 uses atomic acceptance of the original declared claim set, automatic
+Version 0.7 adds [challenge-owned judge committees](docs/judges.md), reusable
+personas and local catalogs. It retains atomic acceptance of the original declared claim set, automatic
 submission-ID references and the mandatory
 [scientific evidence policy](docs/evidence-policy.md), retaining editable challenge
 starters, shared checker tests and deterministic scores from current proof claims
 and protected checker outputs. It is an LLM assessment, not formal certification or an
 authoritative benchmark. The examples and scripted results demonstrate
-plumbing, not mathematical reliability. The internal repository is
-`Layr-Labs/llm-verifier`. Publishing reviewed source internally does not validate
-hosted execution. No live model calls, hosted Actions run, challenge import or
-deployment have been performed for this implementation.
+plumbing, not mathematical reliability. The source repository is
+`Layr-Labs/llm-verifier`. Publishing source does not validate
+hosted execution. This feature has not been qualified through live model calls
+or a hosted challenge evaluation.
 
 Every review applies the [shared external-evidence policy](docs/external-evidence.md).
 
@@ -36,7 +37,7 @@ python3 -m venv .venv
 There are **no runtime Python dependencies**. Builds pin `setuptools==75.8.0` and
 `wheel==0.45.1`; installation may download those build tools. With repository
 access, Git-pinned installation is also possible once the reviewed commit is
-published internally:
+published:
 
 ```sh
 # TEMPLATE: use the reviewed full 40-character commit, not a branch/tag.
@@ -81,6 +82,25 @@ This checks package limits, manifest semantics and provider response-schema
 construction without executing code or calling a model. Organizers can opt into
 the narrow [CurveSmash manifest adapter](docs/preprocessing.md); ordinary challenge
 requirements remain unchanged when it is omitted.
+
+## Judge configuration
+
+Omitting `judging` preserves the single reviewer. To select the bundled committee,
+add `"judging": {"profile": "builtin:math-committee-v1"}` to `verifier.json`.
+Run `llm-verifier judges` to list personas and profiles. Challenges can add local
+persona catalogs, supply a committee JSON file, and override member model settings.
+See the [judge guide](docs/judges.md) and [offline example](examples/committee).
+
+For HashSmash's six-role committee structure and review focus, select:
+
+```json
+{"judging": {"profile": "builtin:hashsmash-v1"}}
+```
+
+It provides evaluability, cryptanalysis, cost and experiment reviewers, followed
+by defense and adjudication, all inheriting `provider` settings. See the
+[HashSmash preset](docs/judges.md#hashsmash-preset) for role overrides and the
+boundary between committee configuration and challenge-specific scoring policy.
 
 ## Independent phases
 
@@ -147,6 +167,8 @@ artifacts from the current trusted run may be consumed.
 
 ## Challenge configuration and examples
 
+- [Committee-reviewed lemma](examples/committee): a bundled profile, protected
+  local persona catalog, and scripted defense/adjudication.
 - [Proof-only lemma](examples/proof): accepts a relevant two-variable lemma with
   `scores: null`. It reserves one genuine full-target objective to fit Yukon's
   1–8 objective contract, but awards no artificial score to the lemma.

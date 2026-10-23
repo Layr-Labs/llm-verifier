@@ -21,6 +21,7 @@ Required fields:
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |
 | `provider` | Explicit `model`; optional settings below |
+| `judging` | Optional protected profile, inline committee or JSON-file selection; see [judges](judges.md) |
 | `limits` | Optional organizer reductions/overrides within hard caps |
 | `runtime` | Optional `{image, platform}`; official Python digest, linux/amd64 |
 | `checkers` | Optional protected registry; see [checks and numeric score gate](checkers.md) |
@@ -285,6 +286,13 @@ The submission may declare `prior_results` as up to 16 exact
 uses the trusted platform context at intake. There is no `prior_imports` config,
 candidate URL/file import, owner allowlist or reference-specific credential.
 Editable source checks validate selectors without resolving them.
+
+## Judge committees
+
+Optional `judging` resolves bundled or local personas into a bounded review
+protocol. Model settings inherit from `provider`; experiment and inference budgets
+are shared. See [judge configuration](judges.md) for JSON examples, default limits,
+protected snapshots and per-member provenance. Omission retains single review.
 
 ## CurveSmash policy, protected rules and selection
 

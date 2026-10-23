@@ -10,15 +10,25 @@ from .jsonutil import canonical, keys, loads, text
 from .preprocessing import preprocess
 
 
-def preflight_manifest(files, config):
+def preflight_manifest(files, config, *, committee=None):
     """The same credential-free deterministic gates used at every intake."""
     effective_files, audit = preprocess(files, config)
     manifest = manifest_from(effective_files, config["limits"], config.get("checkers", []))
     validate_objective_claims(config["objectives"], manifest["claims"])
-    # Delayed import: judgment validation also uses submission request validation.
-    from .judgment import response_schema
-    response_schema(config, manifest)
-    response_schema(config, manifest, final=True)
+    if ("judging" in config) != (committee is not None):
+        raise VerifierError("judge_configuration_required")
+    # Use the actual member formats, including roles that cannot request inputs.
+    # Delayed imports: review schemas also use submission request validation.
+    if committee is not None:
+        from .committee import stage_schema
+        for member in committee["members"]:
+            for final in (False, True):
+                stage_schema(member, config, manifest, final,
+                             single=committee["protocol"] == "single-v1")
+    else:
+        from .judgment import response_schema
+        response_schema(config, manifest)
+        response_schema(config, manifest, final=True)
     return manifest, audit
 
 

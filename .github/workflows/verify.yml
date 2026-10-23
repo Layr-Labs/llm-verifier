@@ -150,7 +150,7 @@ jobs:
           retention-days: 7
 
   initial_review:
-    name: Benchmark initial judge (no candidate execution)
+    name: Benchmark initial judge or committee (no candidate execution)
     needs: [prepare, experiments]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -233,7 +233,7 @@ jobs:
           retention-days: 7
 
   final_review:
-    name: Benchmark final judge (no further requests)
+    name: Benchmark final judge or committee (no further requests)
     needs: [prepare, experiments, initial_review, followup]
     if: needs.initial_review.outputs.kind == 'followup'
     runs-on: ubuntu-24.04

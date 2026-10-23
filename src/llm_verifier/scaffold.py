@@ -114,6 +114,45 @@ def formatted(value):
     return (json.dumps(value, indent=2, ensure_ascii=False, allow_nan=False) + "\n").encode()
 
 
+def solver_documents(root, repository=None, revision=None):
+    """Prepare only our marked blocks; leave all surrounding author bytes intact."""
+    if revision is None:
+        location = (
+            "Read `docs/solving.md` and `skills/llm-verifier-solver/SKILL.md` in the\n"
+            "verifier source used for this install. A wheel also ships both under\n"
+            "`share/llm-verifier` in its Python environment. Locate that directory with\n"
+            "the same Python used to install the CLI:\n\n"
+            "```sh\n"
+            "python -c \"import sysconfig; print(sysconfig.get_path('data') + '/share/llm-verifier')\"\n"
+            "```\n\n"
+            "No hosted verifier revision is pinned yet. Before publishing, the author\n"
+            "must run `llm-verifier github` with the selected full commit to refresh\n"
+            "these pointers. If the matching guide is unavailable, ask the author\n"
+            "for it; do not substitute a guide from a moving branch."
+        )
+    else:
+        base = f"https://github.com/{repository}/blob/{revision}"
+        location = (f"Read the [solver guide]({base}/docs/solving.md) and\n"
+                    f"[solver skill]({base}/skills/llm-verifier-solver/SKILL.md)\n"
+                    "from the same pinned verifier revision as this challenge.")
+    block = read_bytes(TEMPLATES / "solver-guidance.md").replace(
+        b"SOLVER_GUIDANCE_LOCATION", location.encode()).rstrip(b"\n")
+    begin, end = block.splitlines()[0], block.splitlines()[-1]
+    pattern = re.compile(rb"(?ms)^" + re.escape(begin) + rb"\r?\n.*?^" + re.escape(end) + rb"(?=\r?$)")
+    documents = {}
+    for name in ("README.md", "AGENTS.md"):
+        path = Path(root) / name
+        original = read_bytes(path) if os.path.lexists(path) else b""
+        if begin in original or end in original:
+            match = pattern.search(original)
+            if original.count(begin) != 1 or original.count(end) != 1 or match is None:
+                raise VerifierError("ambiguous_solver_guidance_block: " + name)
+            documents[name] = original[:match.start()] + block + original[match.end():]
+        else:
+            documents[name] = original + (b"\n\n" if original else b"") + block + b"\n"
+    return documents
+
+
 def initialize(output, name, model):
     identifier(name)
     if model == "SELECT_OPENAI_MODEL":
@@ -138,6 +177,8 @@ def initialize(output, name, model):
                 config["provider"].update(provider)
                 config["limits"].update(limits)
             write_bytes(staging / "verifier.json", formatted(config))
+            for path, content in solver_documents(staging).items():
+                write_bytes(staging / path, content)
             # The starter is a form: problem-specific TODOs remain until the author fills them.
             report = {"unfilled": unfilled(staging)}
             os.rename(staging, output)
@@ -233,12 +274,17 @@ def github(root, repository, revision):
             admission = tracks[0]["submissionAdmission"]
             submission_references_enabled(admission)
             generated["tracks"][0]["submissionAdmission"] = admission
+    # Validate both documentation targets before changing any generated output.
+    documents = solver_documents(root, repository, revision)
     write_bytes(benchmark, formatted(generated))
     files = ["benchmark.json"]
     for name in ("benchmark.yml", "checker-tests.yml"):
         workflow = read_bytes(TEMPLATES / name).decode().replace("VERIFIER_REPOSITORY", repository).replace("VERIFIER_REVISION", revision)
         path = ".github/workflows/" + name
         write_bytes(Path(root) / path, workflow.encode())
+        files.append(path)
+    for path, content in documents.items():
+        write_bytes(Path(root) / path, content)
         files.append(path)
     return {"files": files, "verifier_revision": revision}
 

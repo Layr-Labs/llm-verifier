@@ -17,4 +17,8 @@ llm-verifier = "llm_verifier.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-llm_verifier = ["templates/*.yml", "templates/starter/*", "templates/starter/.gitignore", "templates/starter/submission/*"]
+llm_verifier = ["templates/*.yml", "templates/*.md", "templates/starter/*", "templates/starter/.gitignore", "templates/starter/submission/*"]
+
+[tool.setuptools.data-files]
+"share/llm-verifier/docs" = ["docs/solving.md"]
+"share/llm-verifier/skills/llm-verifier-solver" = ["skills/llm-verifier-solver/SKILL.md"]

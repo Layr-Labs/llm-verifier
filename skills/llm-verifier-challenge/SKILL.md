@@ -20,6 +20,9 @@ Resolve ambiguities affecting scope, eligibility or score meaning before encodin
   requirement. Reuse the shared runner and keep generic protocol tests upstream.
   Custom checkers need compact, independently determined positive and negative cases.
 - Follow the guide's "What init fills in and what you fill in" for each `TODO`.
+- Supply participants and solver-launching agents with the same-revision
+  [solver guide](../../docs/solving.md). Preserve the generated README/AGENTS
+  discovery blocks and add challenge-specific submission instructions around them.
 - Run `llm-verifier check --root DIRECTORY`. For custom checkers, prepare the configured
   pinned Docker image and run `llm-verifier test-checkers --root DIRECTORY` without
   model credentials.

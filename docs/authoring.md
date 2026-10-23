@@ -63,6 +63,13 @@ You fill in each `TODO`:
 - Partial results: `allow_unscored` is `false` when every submission must claim a
   score, and `true` only when the rules accept unscored lemmas.
 - README: what participants need: the problem, how to submit and how review works.
+  Keep the generated preparation checklist and guide pointer in README and AGENTS.
+  Give solver-launching agents that pointer in their initial context; an upstream
+  skill alone does not ensure discovery. Add challenge-specific instructions
+  around the marked blocks. Root `AGENTS.md` discovery depends on the agent client.
+  For other launchers, supply the pointer in the instruction surface they actually
+  load (for example BB's `.bb/AGENTS.md` or the initial task context); the generator
+  does not create or replace these other policy files.
 - The starting submission: its exact claim, score and complete proof.
 
 Then pin the verifier: pass the newest commit on `master` to `github`, which writes
@@ -203,6 +210,17 @@ supplied secrets. It needs reusable-workflow access and, for private verifier
 checkout, a read-only `VERIFIER_CHECKOUT_TOKEN`, but no model credential.
 For local evaluation use the [independent phases](../README.md#independent-phases);
 local `yukon run` does not orchestrate them.
+
+`init` also adds a short solver checklist to README and AGENTS, pointing to the
+same-install guide and thin skill shipped in the wheel. It does not invent a
+revision before one is selected. `github` refreshes these pointers to immutable
+links for the supplied repository/commit. It appends the block if absent, replaces
+only text between `llm-verifier:solver-guidance:begin` / `end` markers if present,
+and preserves all surrounding author prose. Ambiguous or incomplete markers and
+unsafe file targets fail rather than overwrite policy text. Other agent-policy
+files are untouched. Existing challenges adopt the pointers by explicitly running
+`github`; review its workflow/manifest changes as well. See the shared
+[solver guide](solving.md) for the preparation and independent critique workflow.
 
 ## Public submission admission
 

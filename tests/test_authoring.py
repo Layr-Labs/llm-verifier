@@ -19,7 +19,7 @@ class Authoring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'challenge'
             report = scaffold.initialize(root, 'new-challenge', 'test-model')
-            self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]), 6)
+            self.assertEqual(len([p for p in root.rglob('*') if p.is_file()]), 7)
             config = read_json(root/'verifier.json')
             self.assertEqual(config['provider']['model'], 'test-model')
             # A model without qualified settings gets no effort or budget default.

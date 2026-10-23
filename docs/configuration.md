@@ -273,9 +273,11 @@ https://developers.openai.com/api/docs/guides/background
 
 ## Scientific evidence and prior results
 
-`evidence_policy` is optional in authored config and always normalizes to
-`atomic-claims-v1`; any other value is rejected. This policy cannot be
-relaxed by challenge prose or selected instructions. The
+`evidence_policy` is optional in authored config. When omitted, it normalizes to
+`acceptance_policy`, which defaults to `atomic-claims-v1`. If supplied, it must
+match that policy: `exploratory-v1` is accepted only with an explicit
+`acceptance_policy: "exploratory-v1"`; a mismatch is rejected. Challenge prose or
+selected instructions cannot override the protected choice. The selected
 [mandatory evidence policy](evidence-policy.md) applies to every judgment.
 
 The submission may declare `prior_results` as up to 16 exact

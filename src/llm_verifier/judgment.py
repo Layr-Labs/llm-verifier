@@ -2,7 +2,7 @@
 
 import sys
 
-from .errors import VerifierError
+from .errors import VerifierError, error_context
 from .identity import evidence_key
 from .jsonutil import keys, number, text
 from .submission import followup_plan
@@ -74,15 +74,22 @@ def response_schema(config, manifest=None, *, final=False):
     variants = [("experiment", e) for e in entries] + [("check", c) for c in checkers]
     def strict_objects(schema):
         if schema["type"] == "object":
-            if set(schema["required"]) != set(schema["properties"]):
-                raise VerifierError("strict_provider_optional_inputs_require_json_object")
-            for child in schema["properties"].values():
-                strict_objects(child)
+            optional = set(schema["properties"]) - set(schema["required"])
+            if optional:
+                with error_context("properties", sorted(optional)[0]):
+                    raise VerifierError("strict_provider_optional_inputs_require_json_object")
+            for name, child in schema["properties"].items():
+                with error_context("properties", name):
+                    strict_objects(child)
         elif schema["type"] == "array":
-            strict_objects(schema["items"])
+            with error_context("items"):
+                strict_objects(schema["items"])
     if not final and config["provider"]["response_format"] == "json_schema":
-        for _, entry in variants:
-            strict_objects(entry["input_schema"])
+        for name, group in (("experiments", entries), ("checkers", checkers)):
+            for index, entry in enumerate(group):
+                with error_context("submission.json" if name == "experiments" else "verifier.json",
+                                   name, index, "input_schema"):
+                    strict_objects(entry["input_schema"])
     requests = [{"type": "object", "additionalProperties": False,
                  "required": [selector, "inputs", "reason"], "properties": {
                      selector: {"type": "string", "enum": [entry["id"]]},

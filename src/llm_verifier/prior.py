@@ -10,10 +10,10 @@ from datetime import datetime, timezone
 
 from .errors import VerifierError
 from .identity import submission_key
-from .evidence import POLICY_ID
+from .evidence import policy_id
 from .files import utf8
 from .jsonutil import canonical, digest, integer, keys, loads, sha, text
-from .scoring import validate_claim
+from .scoring import canonical_score, validate_claim
 
 MAX_BUNDLE_BYTES = 262144
 MAX_IMPORT_BYTES = 1048576
@@ -107,7 +107,11 @@ def original_manifest(record):
         paths = claim.get("evidence", []) if type(claim) is dict else []
         if type(paths) is not list or any(type(p) is not str for p in paths):
             raise VerifierError("prior_manifest_evidence")
-        validate_claim(claim, paths)
+        # Authentic exports retain the original spelling, including a rational
+        # normalized by the origin's protected manifest adapter. Validate an
+        # equivalent copy; never rewrite exported bytes or trust a new claim.
+        checked = {**claim, "score": canonical_score(claim["score"])} if type(claim) is dict and "score" in claim else claim
+        validate_claim(checked, paths)
     references(manifest.get("prior_results", []))
     return manifest
 
@@ -284,7 +288,7 @@ def bundle_from_dossier(dossier):
               "finalized_at_ns": data["finalized_at_ns"], "review_sha256": data["selected_review_sha256"],
               "dossier_sha256": dossier["sha256"], "judgment_sha256": digest(judgment)}
     _, ancestors = intake_imports(intake["data"]["prior_snapshot"], intake["data"]["manifest"], source["evaluation_id"], source["intake_created_at_ns"])
-    bundle = {"version": 1, "policy_id": POLICY_ID, "simulation": False, "source": source,
+    bundle = {"version": 1, "policy_id": policy_id(intake["data"]["effective"]["config"]), "simulation": False, "source": source,
               "judgment": {k: judgment[k] for k in ("valid", "reason")}, "ancestors": ancestors}
     bundle["sha256"] = digest(bundle)
     return validate_bundle(bundle)

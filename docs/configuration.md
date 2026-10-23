@@ -154,13 +154,34 @@ intake under the new implementation; existing phase artifacts are source-bound.
 input schemas. [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
 requires every object property to be required and every object to be closed. An
 initial review needing request variants with optional properties
-fails **before the HTTP call**; the organizer must explicitly select
+fails during **preflight and intake, before execution or the HTTP call**; the organizer must explicitly select
 `response_format: "json_object"` for those declarations. The latter includes the
 same full schema in review material and applies identical local validation.
 There is no silent downgrade, response repair or repeated semantic prompting.
 Final/disabled-follow-up schemas omit all unused request variants. Model
 support for particular schema keywords still varies; unsupported requests fail
 as infrastructure, never fall back to another model or fabricate a judgment.
+
+## Manifest preprocessing and package preflight
+
+`manifest_preprocessor` optionally selects `"curvesmash-v1"` from protected
+organizer configuration. It reduces exact claim fractions and derives missing
+bounds from finite integer/string enums. It does not supply unknown bounds,
+change optional arguments, alter candidate code or exclude files. See the
+[adapter rules and audit contract](preprocessing.md).
+
+`llm-verifier preflight --root CHALLENGE --config verifier.json --submission CANDIDATE`
+snapshots the selected subtree, applies the configured adapter and exercises
+normal manifest, objective, admission and initial/final response-schema checks.
+It needs no Docker, model credential or network and writes no files. It prints
+original submission/configuration hashes and any transformation audit. Pass
+`--evaluation` (or `YUKON_EVALUATION`) for selected policies and admission. Actual
+accepted-result resolution, Git checkout authorization, runtime availability and
+remote model support still require the corresponding evaluation phases.
+
+`check`, ordinary intake and hosted `workflow-prepare` use the same manifest and
+response-schema gates. Errors retain their stable code and include bounded,
+escaped field/path names and missing/unexpected keys, without field values.
 
 ## Submission
 
@@ -198,6 +219,8 @@ The intentionally restricted JSON Schema input dialect supports:
   `additionalProperties: false`; at most 32 properties.
 - `integer` / `number`: required finite `minimum` and `maximum`, within ±1e100;
   booleans do not count as integers/numbers; integer bounds must be integers.
+  Integers optionally support `enum` (1–64 distinct integers within the bounds);
+  membership is enforced for initial inputs, follow-ups and checker results.
 - `string`: required `maxLength` (≤4096), optional `minLength` and string `enum`
   (1–64 unique values within the declared length range).
 - `array`: required `items`, `maxItems` (≤128), optional `minItems`.
@@ -260,3 +283,26 @@ The submission may declare `prior_results` as up to 16 exact
 uses the trusted platform context at intake. There is no `prior_imports` config,
 candidate URL/file import, owner allowlist or reference-specific credential.
 Editable source checks validate selectors without resolving them.
+
+## CurveSmash policy, protected rules and selection
+
+`acceptance_policy` defaults to `atomic-claims-v1`. A protected explicit
+`exploratory-v1` selects the existing CurveSmash standard: the whole original
+claim set must be plausible and not refuted, with material heuristics assessed.
+It is not proof or formal certification. The external-evidence requirements,
+atomic scope and deterministic score/check gates still apply. Normalized
+`evidence_policy` and accepted-result `policy_id` identify that actual standard.
+When reusing exploratory results under a stronger standard, prior exploratory
+acceptance alone is not proof; the reviewer must require current justification.
+
+`rules_files` optionally names up to sixteen distinct additional protected UTF-8
+rule files. Their labeled contents join `rules_path` inside the existing aggregate
+131072-character rules bound and effective-configuration hash. They must remain
+outside the candidate subtree and cannot be overwritten by hosted score output.
+
+`submission_selector` can contain `path` and `directory`. The inert UTF-8 file at
+`path` selects a subtree inside `directory` when the CLI's submission argument is
+left at its default. An explicit `--submission` must also remain in that directory.
+The selector is protected from candidate placement and score output. `preflight`,
+`intake`, `simulate` and hosted preparation resolve it identically; unsafe,
+symlinked and cross-track selections fail before snapshotting candidate files.

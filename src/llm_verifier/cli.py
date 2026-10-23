@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 import sys
 
-from .artifacts import intake_snapshot, verify_intake
-from .config import load_config
+from .artifacts import intake_snapshot, preflight_snapshot, verify_intake
+from .config import load_config, resolve_submission
 from .errors import VerifierError
 from .files import distinct_paths, clear_output, outside, read_bytes, read_json, relative, write_json
 from .jsonutil import loads
@@ -39,6 +39,11 @@ def parser():
         cmd.add_argument("--accepted-results-context", default=os.environ.get("YUKON_ACCEPTED_RESULTS"), help="Trusted Yukon workflow context; automatic in hosted evaluation")
         cmd.add_argument("--out", required=True, help="Organizer-owned output, outside candidate paths")
     intake_options(sub.add_parser("intake", help="Create a bounded immutable submission snapshot"))
+    cmd = sub.add_parser("preflight", help="Check a selected package and provider schemas without execution, credentials or network")
+    cmd.add_argument("--root", required=True)
+    cmd.add_argument("--config", default="verifier.json")
+    cmd.add_argument("--submission", default="submission")
+    cmd.add_argument("--evaluation", default=os.environ.get("YUKON_EVALUATION"))
     sim = sub.add_parser("simulate", help="Offline scripted plumbing only; NEVER emits an official score")
     intake_options(sim)
     sim.add_argument("--script", required=True)
@@ -105,6 +110,16 @@ def run(args):
         else:
             result = scaffold.check(args.root) if args.command == "check" else scaffold.test_checkers(args.root)
         print(canonical(result).decode())
+        return
+    if args.command in {"intake", "simulate", "preflight"}:
+        args.submission = resolve_submission(args.root, args.config, args.submission)
+    if args.command == "preflight":
+        from .jsonutil import canonical, digest
+        effective = load_config(args.root, args.config, args.submission, loads(args.evaluation) if args.evaluation else None)
+        prepared = preflight_snapshot(effective, Path(args.root) / relative(args.submission))
+        print(canonical({"valid": True, "submission_files": len(prepared["files"]),
+                         "submission_sha256": digest(prepared["files"]), "config_sha256": digest(effective),
+                         "preprocessing": prepared.get("preprocessing")}).decode())
         return
     if args.command == "export-results":
         distinct_paths([args.dossier], [args.out])
@@ -179,7 +194,7 @@ def main(argv=None):
             print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command == "simulate" else ""))
         return 0
     except VerifierError as exc:
-        # VerifierError messages are static categories, never raw provider/file text.
+        # Diagnostics contain static codes and escaped field/path names, never input values or provider text.
         print("llm-verifier: " + str(exc), file=sys.stderr)
         return 2
     except Exception:

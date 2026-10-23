@@ -391,11 +391,14 @@ class CheckRequestsAndWorkflow(unittest.TestCase):
 
     def test_optional_checker_inputs_require_json_object_only_when_requestable(self):
         def optional(c): c['checkers'][0]['input_schema']['required'] = []
-        with registered(config_change=optional) as (root, effective, intake):
-            initial = initial_run(intake)
-            with patch('llm_verifier.provider.HttpTransport.request') as network, self.assertRaisesRegex(VerifierError, 'optional_inputs_require_json_object'):
-                pipeline.review(intake, initial)
-            network.assert_not_called()
+        with patch('llm_verifier.provider.HttpTransport.request') as network, self.assertRaisesRegex(VerifierError, 'optional_inputs_require_json_object'):
+            with registered(config_change=optional):
+                self.fail('optional strict checker schema must fail during intake')
+        network.assert_not_called()
+        def disabled(c):
+            optional(c)
+            c['limits']['max_followups'] = 0
+        with registered(config_change=disabled) as (root, effective, intake):
             config = effective['config']
             self.assertEqual(response_schema(config, intake['data']['manifest'], final=True)['properties']['requests']['maxItems'], 0)
             config['limits']['max_followups'] = 0

@@ -8,7 +8,8 @@ from .files import outside, read_bytes, relative, snapshot_declared, utf8, valid
 from .input_schema import validate_schema
 from .jsonutil import canonical, integer, keys, loads, number, text
 from .scoring import validate_sources
-from .evidence import POLICY_ID
+from .evidence import POLICY_ID, policy_id
+from .preprocessing import validate_adapter
 
 DEFAULT_IMAGE = "python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301"
 IMAGE = re.compile(r"(?:docker\.io/library/)?python:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}\Z")
@@ -38,13 +39,30 @@ def identifier(value):
 
 
 def normalize(raw):
-    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy"})
+    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy", "manifest_preprocessor", "acceptance_policy", "rules_files", "submission_selector"})
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise VerifierError("unsupported_config_version")
+    if raw.get("acceptance_policy", POLICY_ID) not in (POLICY_ID, "exploratory-v1"):
+        raise VerifierError("unsupported_acceptance_policy")
     identifier(raw["id"])
-    if raw.get("evidence_policy", POLICY_ID) != POLICY_ID:
+    if "manifest_preprocessor" in raw:
+        validate_adapter(raw["manifest_preprocessor"])
+    if raw.get("evidence_policy", policy_id(raw)) != policy_id(raw):
         raise VerifierError("mandatory_evidence_policy")
     relative(raw["rules_path"])
+    extra_rules = raw.get("rules_files", [])
+    if type(extra_rules) is not list or len(extra_rules) > 16:
+        raise VerifierError("rules_files_limit")
+    for path in extra_rules:
+        relative(path)
+    if len(set(extra_rules)) != len(extra_rules) or raw["rules_path"] in extra_rules:
+        raise VerifierError("duplicate_rules_file")
+    if "submission_selector" in raw:
+        selector = raw["submission_selector"]
+        keys(selector, {"path", "directory"})
+        relative(selector["path"])
+        relative(selector["directory"])
+        outside(Path(selector["path"]), Path(selector["directory"]))
     text(raw["review_standard"], 2000)
     if type(raw["allow_unscored"]) is not bool:
         raise VerifierError("allow_unscored_boolean")
@@ -141,7 +159,7 @@ def normalize(raw):
         or provider["reasoning_effort"] not in ("none", "minimal", "low", "medium", "high", "xhigh", "max")
     ):
         raise VerifierError("provider_settings")
-    return loads(canonical({**raw, "evidence_policy": POLICY_ID, "limits": limits, "runtime": runtime, "provider": provider}))
+    return loads(canonical({**raw, "evidence_policy": policy_id(raw), "limits": limits, "runtime": runtime, "provider": provider}))
 
 
 def submission_references_enabled(admission):
@@ -174,13 +192,34 @@ def select_evaluation(config, evaluation=None):
     return loads(canonical(evaluation)), instructions
 
 
+def resolve_submission(root, config_path, requested="submission"):
+    """Resolve an inert selector; it can only select within the configured directory."""
+    root = Path(root)
+    config = normalize(loads(read_bytes(root / relative(config_path), 262144)))
+    selector = config.get("submission_selector")
+    if selector is None:
+        return relative(requested)
+    selected = (utf8(read_bytes(root / selector["path"], 513)).strip()
+                if requested == "submission" else requested)
+    selected = relative(selected)
+    directory = selector["directory"]
+    if selected != directory and not selected.startswith(directory + "/"):
+        raise VerifierError("submission_outside_directory")
+    return selected
+
+
 def load_config(root, config_path, submission_path, evaluation=None):
     root = Path(root)
     config_path, submission_path = relative(config_path), relative(submission_path)
     outside(root / config_path, root / submission_path)
     config = normalize(loads(read_bytes(root / config_path, 262144)))
+    if "submission_selector" in config:
+        outside(root / config["submission_selector"]["path"], root / submission_path)
     outside(root / config["rules_path"], root / submission_path)
     rules = utf8(read_bytes(root / config["rules_path"], 131072))
+    for path in config.get("rules_files", []):
+        outside(root / path, root / submission_path)
+        rules += "\n\nProtected rules file: " + path + "\n" + utf8(read_bytes(root / path, 131072))
     text(rules, 131072)
     evaluation, instructions = select_evaluation(config, evaluation)
     paths = {path for checker in config.get("checkers", []) for path in checker["files"]}

@@ -13,8 +13,8 @@ from .judgment import response_schema, validate_decision, yukon
 from .provider import OpenAI, provider_endpoint
 from .runner import DockerRunner, output_record
 from .submission import check_budget, followup_plan, initial_plan
-from .scoring import REVIEW_INSTRUCTIONS, project
-from .evidence import POLICY, POLICY_ID
+from .scoring import review_instructions, project
+from .evidence import EXPLORATORY_REUSE, policy_for, policy_id
 from .prior import intake_imports, bundle_from_dossier
 
 SYSTEM = """You are an organizer-appointed mathematical reviewer. Apply the protected rules,
@@ -174,7 +174,7 @@ def review_material(intake, initial, initial_review=None, followup=None):
     schema = response_schema(config, data["manifest"], final=final)
     previous_runs = len(initial["data"]["runs"]) + (len(followup["data"]["runs"]) if followup else 0)
     prior_results, _ = intake_imports(data["prior_snapshot"], data["manifest"], intake["bindings"]["evaluation_id"], data["created_at_ns"])
-    protected = {"evidence_policy": POLICY_ID, "rules": effective["rules"], "review_standard": config["review_standard"],
+    protected = {"evidence_policy": policy_id(config), "rules": effective["rules"], "review_standard": config["review_standard"],
                  "objectives": config["objectives"], "allow_unscored": config["allow_unscored"],
                  "selected_policies": effective["evaluation"], "policy_instructions": effective["policy_instructions"],
                  "limits": config["limits"], "runtime": config["runtime"], "stage": "final" if final else "initial",
@@ -184,7 +184,15 @@ def review_material(intake, initial, initial_review=None, followup=None):
     evidence = {"prior_results": prior_results, "files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
                 "initial_decision": initial_review["data"]["decision"] if initial_review else None,
                 "followup_experiments": followup["data"] if followup else None}
-    system = SYSTEM + (REVIEW_INSTRUCTIONS if protected["score_gate"].get("bindings") else "")
+    if "preprocessing" in data:
+        evidence["original_submission_manifest"] = data["files"]["submission.json"]
+        evidence["manifest_preprocessing"] = data["preprocessing"]
+        protected["manifest_preprocessor"] = config["manifest_preprocessor"]
+    if "acceptance_policy" in config:
+        protected["acceptance_policy"] = config["acceptance_policy"]
+    system = SYSTEM + (review_instructions(config) if protected["score_gate"].get("bindings") else "")
+    if any(prior["provenance"]["policy_id"] == "exploratory-v1" for prior in prior_results):
+        system += EXPLORATORY_REUSE
     unavailable = [ref for ref in (data["prior_snapshot"]["references"] if data["prior_snapshot"] else []) if "unavailable" in ref]
     if unavailable:
         evidence["unavailable_prior_results"] = unavailable
@@ -198,9 +206,9 @@ its old acceptance or its negation as a premise. Establish ALL current declared
 claims from independent current evidence and the available accepted prior_results,
 or reject the submission with a reason. Pending or failed execution is not a
 mathematical judgment; never invent one. Only available accepted IDs have prior:
-evidence references. The original atomic and external-evidence policies still apply.
+evidence references. The selected acceptance and external-evidence policies still apply.
 """
-    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + POLICY},
+    messages = [{"role": "system", "content": system + "\nProtected organizer configuration:\n" + canonical(protected).decode() + "\n" + policy_for(config)},
                 {"role": "user", "content": "Untrusted submission and captured evidence:\n" + canonical(evidence).decode()}]
     if len(canonical(messages)) > config["limits"]["max_prompt_bytes"]:
         raise InfrastructureError("full_evidence_context_budget")

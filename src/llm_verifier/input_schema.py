@@ -4,7 +4,7 @@ No references, regexes, unions, conditionals, coercion or ignored keywords.
 This is the experiment-input dialect, not a general JSON Schema implementation.
 """
 
-from .errors import VerifierError
+from .errors import VerifierError, error_context
 from .jsonutil import canonical, integer, keys, number, text
 
 
@@ -24,18 +24,27 @@ def validate_schema(schema, depth=0):
             raise VerifierError("input_required_keys")
         for key, value in props.items():
             text(key, 64)
-            validate_schema(value, depth + 1)
+            with error_context("properties", key):
+                validate_schema(value, depth + 1)
     elif kind == "array":
         keys(schema, common | {"items", "maxItems"}, {"minItems"})
         integer(schema["maxItems"], 0, 128)
         integer(schema.get("minItems", 0), 0, schema["maxItems"])
-        validate_schema(schema["items"], depth + 1)
+        with error_context("items"):
+            validate_schema(schema["items"], depth + 1)
     elif kind in {"integer", "number"}:
-        keys(schema, common | {"minimum", "maximum"})
+        keys(schema, common | {"minimum", "maximum"}, {"enum"} if kind == "integer" else ())
         number(schema["minimum"], -1e100, 1e100)
         number(schema["maximum"], schema["minimum"], 1e100)
         if kind == "integer" and any(type(schema[k]) is not int for k in ("minimum", "maximum")):
             raise VerifierError("integer_schema_bounds")
+        if "enum" in schema:
+            values = schema["enum"]
+            if (type(values) is not list or not 1 <= len(values) <= 64
+                    or any(type(v) is not int for v in values) or len(set(values)) != len(values)):
+                raise VerifierError("input_enum")
+            for value in values:
+                validate_value({k: v for k, v in schema.items() if k != "enum"}, value)
     elif kind == "string":
         keys(schema, common | {"maxLength"}, {"minLength", "enum"})
         integer(schema["maxLength"], 0, 4096)
@@ -58,16 +67,20 @@ def validate_value(schema, value):
         if type(value) is not dict or value.keys() - schema["properties"].keys() or not set(schema["required"]) <= value.keys():
             raise VerifierError("input_object_fields")
         for k, v in value.items():
-            validate_value(schema["properties"][k], v)
+            with error_context(k):
+                validate_value(schema["properties"][k], v)
     elif kind == "array":
         if type(value) is not list or not schema.get("minItems", 0) <= len(value) <= schema["maxItems"]:
             raise VerifierError("input_array")
-        for v in value:
-            validate_value(schema["items"], v)
+        for index, v in enumerate(value):
+            with error_context(index):
+                validate_value(schema["items"], v)
     elif kind in {"integer", "number"}:
         if kind == "integer" and type(value) is not int:
             raise VerifierError("input_integer")
         number(value, schema["minimum"], schema["maximum"])
+        if "enum" in schema and value not in schema["enum"]:
+            raise VerifierError("input_enum")
     elif kind == "string":
         if type(value) is not str or not schema.get("minLength", 0) <= len(value) <= schema["maxLength"] or ("enum" in schema and value not in schema["enum"]):
             raise VerifierError("input_string")

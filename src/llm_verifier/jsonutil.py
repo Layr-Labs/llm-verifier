@@ -77,8 +77,12 @@ def digest(value: Any) -> str:
 
 
 def keys(obj, required, optional=()):
-    if type(obj) is not dict or not set(required) <= obj.keys() or obj.keys() - set(required) - set(optional):
+    if type(obj) is not dict:
         raise VerifierError("object_fields")
+    missing = set(required) - obj.keys()
+    unexpected = obj.keys() - set(required) - set(optional)
+    if missing or unexpected:
+        raise VerifierError("object_fields", missing=missing, unexpected=unexpected)
 
 
 def text(value, maximum=4000):

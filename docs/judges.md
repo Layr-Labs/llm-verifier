@@ -241,9 +241,13 @@ With explicit `judging`, the default whole-evaluation inference limits are:
 Explicit values in `limits` take precedence. Each review phase also has a hard
 1200-second wall deadline across all members. Review jobs retain their existing
 30-minute hosted timeout. A member cannot obtain a fresh whole-evaluation budget;
-initial and final rounds share attempts, time and token allowance. Minimum capacity
-for the initial mandatory roles is checked before inference; conditional defense,
-follow-up reviews and retries may still exhaust a small configured budget.
+initial and final rounds share attempts, time and token allowance. Before inference,
+the request and token budgets must cover one call to every member, including the
+conditional defender, using each member's configured completion-token cap. The
+bundled math and HashSmash profiles therefore require at least six requests and
+49,152 reserved completion tokens with default member settings. Defense is still
+skipped when there are no blocking findings, and unused calls are not charged.
+Retries and follow-up reviews may still exhaust this minimum budget.
 
 `total_review_tokens` requires `judging`. It counts **reserved completion tokens**:
 each member's `max_completion_tokens` multiplied by its actual generation attempts,

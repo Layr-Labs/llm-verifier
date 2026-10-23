@@ -62,7 +62,11 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Total reserved output bytes | 393,216 | 4,194,304 |
 | Memory MiB / CPUs / processes / tmpfs MiB | 256 / 1 / 32 / 16 | 1024 / 4 / 128 / 64 |
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
-| Total review seconds / generation attempts across both reviews | 180 / 4 | 2400 / 6 |
+| Total review seconds / generation attempts across both reviews | 180 / 4 without `judging`; 1800 / 24 with `judging` | 2400 / 64 |
+
+With `judging`, the shared reserved completion-token budget defaults to 262,144
+and has a hard maximum of 2,097,152. Initial capacity must cover every member,
+including conditional defense; see [committee budgets](judges.md#budgets-and-immutable-provenance).
 
 Candidate experiments and organizer checks share all run/time/output budgets.
 The registry source union independently uses the same file/count/byte caps as the

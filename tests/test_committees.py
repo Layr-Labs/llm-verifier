@@ -135,7 +135,7 @@ class JudgeConfiguration(unittest.TestCase):
     def test_inline_single_and_member_override(self):
         spec = {"protocol": "single-v1", "members": [{"id": "one", "stage": "review",
                 "persona": "builtin:proof-reviewer-v1", "provider": {"model": "another-model"}}]}
-        with committee(judging=spec) as (root, effective, intake):
+        with committee(judging=spec, limits={"total_provider_requests": 1, "total_review_tokens": 8192}) as (root, effective, intake):
             initial = pipeline.execute(intake)
             with scripted_model([read_json(root / "simulation.json")["initial_decision"]]):
                 first = pipeline.review(intake, initial)
@@ -195,15 +195,24 @@ class JudgeConfiguration(unittest.TestCase):
                 with self.assertRaises(VerifierError): intake_snapshot(changed, root / "submission")
 
     def test_minimum_budget_checked_before_inference(self):
-        for limits in ({"total_provider_requests": 4}, {"total_review_tokens": 32768}):
-            with self.subTest(limits=limits), patch.object(HttpTransport, "request") as transport, self.assertRaisesRegex(VerifierError, "committee_minimum_budget"):
-                with committee(limits=limits): pass
-            transport.assert_not_called()
+        for profile, defender in (("builtin:math-committee-v1", "defender"),
+                                  ("builtin:hashsmash-v1", "lane_defender")):
+            for defender_tokens in (8192, 16384):
+                spec = {"profile": profile, "overrides": {
+                    defender: {"provider": {"max_completion_tokens": defender_tokens}}}}
+                minimum_tokens = 5 * 8192 + defender_tokens
+                for limits in ({"total_provider_requests": 5}, {"total_review_tokens": 5 * 8192},
+                               {"total_review_tokens": minimum_tokens - 1}):
+                    with self.subTest(profile=profile, defender_tokens=defender_tokens, limits=limits):
+                        with patch.object(HttpTransport, "request") as transport:
+                            with self.assertRaisesRegex(VerifierError, "committee_minimum_budget"):
+                                with committee(judging=spec, limits=limits): pass
+                            transport.assert_not_called()
 
 
 class CommitteeProtocol(unittest.TestCase):
     def test_hashsmash_finding_defense_and_adjudication(self):
-        with committee(judging={"profile": "builtin:hashsmash-v1"}) as (root, _, intake):
+        with committee(judging={"profile": "builtin:hashsmash-v1"}, limits={"total_provider_requests": 6, "total_review_tokens": 6 * 8192}) as (root, _, intake):
             decision = read_json(root / "simulation.json")["initial_decision"]
             defense = {**response(), "finding_id": "lane_cryptanalysis/gap"}
             resolution = {**defense, "outcome": "dismissed"}
@@ -218,7 +227,7 @@ class CommitteeProtocol(unittest.TestCase):
             self.assertEqual(first["data"]["provenance"]["attempts"], 6)
 
     def test_independent_reviews_and_one_final_exportable_judgment(self):
-        with committee() as (root, _, intake):
+        with committee(limits={"total_provider_requests": 6, "total_review_tokens": 6 * 8192}) as (root, _, intake):
             initial = pipeline.execute(intake)
             decision = read_json(root / "simulation.json")["initial_decision"]
             bodies = []
@@ -239,14 +248,18 @@ class CommitteeProtocol(unittest.TestCase):
             self.assertEqual(pipeline.export_results(result), read_json(root / "accepted.json"))
 
     def test_defense_required_and_objections_resolved_exactly(self):
+        spec = {**PROFILE, "overrides": {"defender": {"provider": {"max_completion_tokens": 16384}}}}
+        limits = {"total_provider_requests": 6, "total_review_tokens": 5 * 8192 + 16384}
         for outcome, valid in (("dismissed", True), ("confirmed", False), ("unresolved", False)):
-            with self.subTest(outcome=outcome), committee() as (root, _, intake):
+            with self.subTest(outcome=outcome), committee(judging=spec, limits=limits) as (root, _, intake):
                 decision = read_json(root / "simulation.json")["initial_decision"]
                 decision["judgment"]["valid"] = valid
                 initial, first = review(root, intake, sequence(decision, outcome))
                 self.assertEqual(len(first["data"]["reviews"]), 6)
                 self.assertEqual(pipeline.dossier(intake, initial, first)["data"]["judgment"]["valid"], valid)
                 self.assertEqual(first["data"]["reviews"][4]["stage"], "defense")
+                self.assertEqual(first["data"]["provenance"]["attempts"], 6)
+                self.assertEqual(first["data"]["provenance"]["allotted_completion_tokens"], limits["total_review_tokens"])
 
     def test_cannot_accept_confirmed_or_unresolved_findings(self):
         for outcome in ("confirmed", "unresolved"):
@@ -342,13 +355,14 @@ class CommitteeProtocol(unittest.TestCase):
                 pipeline.review(intake, initial, first, extra)
 
     def test_request_and_reserved_token_budgets_include_retries(self):
-        for limits in ({"total_provider_requests": 5}, {"total_review_tokens": 5 * 8192}):
+        for limits in ({"total_provider_requests": 6}, {"total_review_tokens": 6 * 8192}):
             with self.subTest(limits=limits), committee(limits=limits) as (root, _, intake):
                 initial = pipeline.execute(intake)
-                replies = iter([HttpResponse(503, b"")] + [completion(report())] * 4)
+                replies = iter([HttpResponse(503, b""), completion(report(findings=[finding()]))]
+                               + [completion(report())] * 3 + [completion({"responses": [response()]})])
                 with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=lambda *args: next(replies)) as calls, patch("llm_verifier.provider.time.sleep"), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
                     pipeline.review(intake, initial)
-                self.assertEqual(calls.call_count, 5)
+                self.assertEqual(calls.call_count, 6)
 
     def test_whole_evaluation_budget_spans_followup(self):
         with committee("computation", limits={"total_provider_requests": 8}) as (root, _, intake):

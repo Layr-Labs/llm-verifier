@@ -156,10 +156,10 @@ def _resolve(raw, read, provider, limits):
     elif (not 1 <= stages.count("review") <= 6 or stages.count("defense") != 1
           or stages.count("adjudication") != 1):
         raise VerifierError("committee_required_stages")
-    # Validate minimum initial-stage capacity before making any paid request.
-    mandatory = [m for m in members if m["stage"] != "defense"]
-    if (len(mandatory) > limits["total_provider_requests"]
-            or sum(m["provider"]["max_completion_tokens"] for m in mandatory) > limits["total_review_tokens"]):
+    # Allow one complete initial review, including conditional defense, before
+    # any paid request. A blocking finding must not make adjudication unaffordable.
+    if (len(members) > limits["total_provider_requests"]
+            or sum(m["provider"]["max_completion_tokens"] for m in members) > limits["total_review_tokens"]):
         raise VerifierError("committee_minimum_budget")
     return {"version": 1, "profile": profile_id, "protocol": profile["protocol"], "members": members}
 

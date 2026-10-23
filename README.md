@@ -71,6 +71,17 @@ For candidate preparation, use the shared [solver guide](docs/solving.md) and th
 and AGENTS files carry a short checklist and same-revision discovery pointers;
 `github` refreshes them to the supplied immutable pin while preserving author prose.
 
+Before uploading a candidate package, run the credential-free check on its exact subtree:
+
+```sh
+llm-verifier preflight --root /path/to/challenge --submission submission
+```
+
+This checks package limits, manifest semantics and provider response-schema
+construction without executing code or calling a model. Organizers can opt into
+the narrow [CurveSmash manifest adapter](docs/preprocessing.md); ordinary challenge
+requirements remain unchanged when it is omitted.
+
 ## Independent phases
 
 Keep protected rules/configuration outside `submission/`; keep all `.work/`

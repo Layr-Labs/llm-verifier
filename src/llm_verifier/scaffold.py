@@ -12,7 +12,7 @@ from .checks import check_validation
 from .config import identifier, load_config, submission_references_enabled
 from .errors import VerifierError
 from .files import directory_fd, read_bytes, read_json, write_bytes, snapshot
-from .submission import manifest_from
+from .submission import preflight_manifest
 from .input_schema import validate_value
 from .jsonutil import canonical, keys
 from .runner import DockerRunner
@@ -236,7 +236,7 @@ def check(root):
     refuse_unfilled(root)
     effective = load_config(root, "verifier.json", "submission")
     files = snapshot(Path(root) / "submission", effective["config"]["limits"])
-    submission = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
+    submission, audit = preflight_manifest(files, effective["config"])
     config = effective["config"]
     validate_objective_claims(config["objectives"], submission["claims"])
     # Strict validation at trust boundaries; unrelated authoring files are not
@@ -253,7 +253,8 @@ def check(root):
         fields = ("objectives", "paretoPolicies", "editablePaths", "maxSubmissionBytes", "direction")
         if current.get("schemaVersion") != 2 or any(canonical(tracks[0].get(k)) != canonical(expected[k]) for k in fields):
             raise VerifierError("stale_benchmark_run_github_command")
-    return {"valid": True, "submission_files": len(files), "checker_cases": len(cases)}
+    return {"valid": True, "submission_files": len(files), "checker_cases": len(cases),
+            **({"preprocessing": audit} if audit is not None else {})}
 
 
 def github(root, repository, revision):

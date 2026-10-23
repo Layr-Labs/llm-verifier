@@ -1,63 +1,88 @@
 """Inert submission declarations and budgeted immutable entrypoint requests."""
 
 from .config import identifier
-from .errors import VerifierError
+from .errors import VerifierError, error_context
 from .files import relative, validate_files
 from .input_schema import validate_schema, validate_value
-from .scoring import validate_claim
+from .scoring import validate_claim, validate_objective_claims
 from .prior import references
 from .jsonutil import canonical, keys, loads, text
+from .preprocessing import preprocess
+
+
+def preflight_manifest(files, config):
+    """The same credential-free deterministic gates used at every intake."""
+    effective_files, audit = preprocess(files, config)
+    manifest = manifest_from(effective_files, config["limits"], config.get("checkers", []))
+    validate_objective_claims(config["objectives"], manifest["claims"])
+    # Delayed import: judgment validation also uses submission request validation.
+    from .judgment import response_schema
+    response_schema(config, manifest)
+    response_schema(config, manifest, final=True)
+    return manifest, audit
 
 
 def manifest_from(files, limits, checkers=()):
     validate_files(files, limits)
     if "submission.json" not in files:
         raise VerifierError("missing_submission_manifest")
+    with error_context("submission.json"):
+        return _manifest_from(files, limits, checkers)
+
+
+def _manifest_from(files, limits, checkers):
     manifest = loads(files["submission.json"]["text"])
     keys(manifest, {"version", "title", "claims", "experiments"}, {"checks", "prior_results"})
     if type(manifest["version"]) is not int or manifest["version"] != 1:
         raise VerifierError("unsupported_submission_version")
-    text(manifest["title"], 300)
+    with error_context("title"):
+        text(manifest["title"], 300)
     claims = manifest["claims"]
     if type(claims) is not list or not 1 <= len(claims) <= 32:
         raise VerifierError("claim_count")
-    for claim in claims:
-        validate_claim(claim, files)
+    for index, claim in enumerate(claims):
+        with error_context("claims", index):
+            validate_claim(claim, files)
     entries = manifest["experiments"]
     if type(entries) is not list or len(entries) > 16:
         raise VerifierError("experiment_count")
     seen = set()
-    for entry in entries:
-        keys(entry, {"id", "source", "purpose", "input_schema", "initial_inputs"})
-        identifier(entry["id"])
-        if entry["id"] in seen:
-            raise VerifierError("duplicate_experiment_id")
-        seen.add(entry["id"])
-        path = relative(entry["source"])
-        if not path.endswith(".py") or path not in files:
-            raise VerifierError("missing_python_entrypoint")
-        text(entry["purpose"], 4000)
-        validate_schema(entry["input_schema"])
-        if entry["input_schema"]["type"] != "object":
-            raise VerifierError("input_root_object_required")
-        if type(entry["initial_inputs"]) is not list or len(entry["initial_inputs"]) > limits["max_initial_runs"]:
-            raise VerifierError("initial_run_limit")
-        for value in entry["initial_inputs"]:
-            validate_value(entry["input_schema"], value)
+    for index, entry in enumerate(entries):
+        with error_context("experiments", index):
+            keys(entry, {"id", "source", "purpose", "input_schema", "initial_inputs"})
+            identifier(entry["id"])
+            if entry["id"] in seen:
+                raise VerifierError("duplicate_experiment_id")
+            seen.add(entry["id"])
+            path = relative(entry["source"])
+            if not path.endswith(".py") or path not in files:
+                raise VerifierError("missing_python_entrypoint")
+            text(entry["purpose"], 4000)
+            with error_context("input_schema"):
+                validate_schema(entry["input_schema"])
+                if entry["input_schema"]["type"] != "object":
+                    raise VerifierError("input_root_object_required")
+            if type(entry["initial_inputs"]) is not list or len(entry["initial_inputs"]) > limits["max_initial_runs"]:
+                raise VerifierError("initial_run_limit")
+            for input_index, value in enumerate(entry["initial_inputs"]):
+                with error_context("initial_inputs", input_index):
+                    validate_value(entry["input_schema"], value)
     checks = manifest.get("checks", [])
     if type(checks) is not list or len(checks) > 16:
         raise VerifierError("submission_check_count")
     registry = {c["id"]: c for c in checkers}
     declared = set()
-    for check in checks:
-        keys(check, {"check", "inputs"})
-        identifier(check["check"])
-        if check["check"] not in registry:
-            raise VerifierError("unregistered_checker")
-        if check["check"] in declared:
-            raise VerifierError("duplicate_declared_check")
-        declared.add(check["check"])
-        validate_value(registry[check["check"]]["input_schema"], check["inputs"])
+    for index, check in enumerate(checks):
+        with error_context("checks", index):
+            keys(check, {"check", "inputs"})
+            identifier(check["check"])
+            if check["check"] not in registry:
+                raise VerifierError("unregistered_checker")
+            if check["check"] in declared:
+                raise VerifierError("duplicate_declared_check")
+            declared.add(check["check"])
+            with error_context("inputs"):
+                validate_value(registry[check["check"]]["input_schema"], check["inputs"])
     references(manifest.get("prior_results", []))
     plan = initial_plan(manifest)
     check_budget(plan, limits, "initial")

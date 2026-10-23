@@ -9,7 +9,7 @@ import stat
 import tempfile
 import tokenize
 
-from .errors import VerifierError
+from .errors import VerifierError, error_context
 from .jsonutil import canonical, integer, keys, loads, sha, MAX_ARTIFACT_BYTES
 
 _PART = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
@@ -119,10 +119,11 @@ def snapshot(root, limits):
             elif stat.S_ISREG(info.st_mode):
                 if len(files) >= limits["max_files"]:
                     raise VerifierError("file_count_limit")
-                data = _read(fd, name, min(limits["max_file_bytes"], limits["max_submission_bytes"] - total))
-                total += len(data)
-                files[path] = {"text": utf8(data, python=path.endswith(".py")),
-                               "sha256": sha(data), "size": len(data)}
+                with error_context(path):
+                    data = _read(fd, name, min(limits["max_file_bytes"], limits["max_submission_bytes"] - total))
+                    total += len(data)
+                    files[path] = {"text": utf8(data, python=path.endswith(".py")),
+                                   "sha256": sha(data), "size": len(data)}
             else:
                 raise VerifierError("regular_file_required")
     try:

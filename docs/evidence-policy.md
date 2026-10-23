@@ -1,13 +1,23 @@
 # Atomic claims and scientific evidence
 
-Every initial/final and scored/unscored review uses the mandatory
-`atomic-claims-v1` policy. Configuration may omit the field (it defaults to this
-policy); another current policy value is rejected. Challenge prose cannot relax it.
+Every initial/final and scored/unscored review uses the protected
+`acceptance_policy`, which defaults to `atomic-claims-v1`. An omitted
+`evidence_policy` normalizes to that choice; an explicit value must match it.
+`exploratory-v1` is accepted only with an explicit
+`acceptance_policy: "exploratory-v1"`. Mismatches and unknown policy values are
+rejected. Challenge prose cannot override the protected choice.
 
-`submission.json`'s `claims` is the single authoritative claim set. `valid: true`
-accepts every declared claim exactly as written. If one claim is not established,
-the entire set is rejected. A judge cannot accept a subset, add conditions, weaken
-a statement or rewrite its scope in `reason` while accepting the submission.
+Under `atomic-claims-v1`, every declared claim must be established as written.
+Under protected `exploratory-v1`, every declared claim must be plausible and not
+refuted, with material assumptions and heuristics assessed. Exploratory acceptance
+means `plausible_not_refuted`, not proof or formal certification. See the
+[policy configuration](configuration.md#curvesmash-policy-protected-rules-and-selection).
+
+Under either policy, `submission.json`'s `claims` is the single authoritative claim
+set. `valid: true` accepts every declared claim exactly as written under the
+selected standard. If one claim fails that standard, the entire set is rejected.
+A judge cannot accept a subset, add conditions, weaken a statement or rewrite its
+scope in `reason` while accepting the submission.
 A useful narrower lemma can be a separate submission and receive separate credit.
 Incidental claims, conjectures and findings in proof or reason prose are not
 separately accepted or reusable.
@@ -33,7 +43,10 @@ must decline ambiguous reinterpretation or missing definitions. It cannot import
 meaning from current challenge rules, prior reason prose or incidental proof
 assertions. Current evidence must independently reproduce and validate enough
 context for applicability; missing context cannot be invented. The original proof
-need not be rejudged merely to use an unambiguous accepted claim.
+need not be rejudged merely to use an unambiguous accepted claim. The origin's
+`policy_id` preserves its acceptance standard: exploratory acceptance alone cannot
+establish a theorem under an atomic proof standard; stronger use needs sufficient
+current justification.
 
 The judgment has exactly `valid`, `scores`, `reason`, `evidence_refs` and
 `review_standard`. Reason explains acceptance or the missing premise; known
@@ -43,6 +56,7 @@ report or per-objective support table. Structural validation does not prove that
 a model discovers every missing premise or judges truth and entailment correctly.
 
 For bound objectives the model returns `scores: null`; the verifier derives scores
-only from current source/check gates after atomic validity. Prior acceptance
-cannot supply a score, witness pass or current objective entitlement. See the
+only from current source/check gates after whole-submission acceptance under the
+selected policy. Prior acceptance cannot supply a score, witness pass or current
+objective entitlement. See the
 [score rule](authoring.md#score-availability) and [reference wire](prior-results.md).

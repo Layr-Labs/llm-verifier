@@ -8,6 +8,7 @@ from .errors import VerifierError
 from .input_schema import validate_value
 from .jsonutil import canonical, digest
 from .scoring import bindings
+from .preprocessing import execution_files
 
 
 def execution_source(data, request):
@@ -17,7 +18,7 @@ def execution_source(data, request):
         files = {path: data["effective"]["checker_files"][path] for path in entry["files"]}
     else:
         entry = next(e for e in data["manifest"]["experiments"] if e["id"] == request["experiment"])
-        files = data["files"]
+        files = execution_files(data)
     return entry, files
 
 

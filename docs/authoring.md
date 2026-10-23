@@ -25,13 +25,30 @@ checkers. Keep the starting proof in one file. There is no external definition,
 controller receipt, copied runner, generated skill, or fixture generator.
 
 `check` also validates the config, candidate snapshot, evidence references, checker
-bundles and known-answer cases. It executes no code or model. Unrelated authoring
+bundles, known-answer cases and the initial/final provider response schemas.
+Optional input properties with strict output now fail here and at intake, before
+experiments. It executes no code or model. Unrelated authoring
 files and caches outside `submission/` are allowed. It validates prior-result
 selector syntax locally; authenticated resolution occurs at evaluation intake,
 so ordinary editing and `check` need no platform credentials. Keep protected config, rules
 and checker files outside participant-editable paths. Repository access controls
 and the organizer's trusted checkout provide authority; this command is not a
 repository attestation or a restriction on an authoring agent's permissions.
+
+For a candidate stored outside the starter's `submission/` directory, use the
+same protected configuration and exact subtree that hosted evaluation will use:
+
+```sh
+llm-verifier preflight --root my-challenge --config verifier.json \
+  --submission submissions/candidate
+```
+
+This command needs no network or credentials, changes no source files, and checks
+provider response-schema construction as well as the package. Python caches
+such as `__pycache__/*.pyc` must be excluded from submitted packages. The optional
+[CurveSmash adapter](preprocessing.md) is organizer-selected and prints its exact
+repairs; participant manifests cannot opt in. A successful preflight enables
+evaluation but does not establish the mathematical claim or remote model access.
 
 ## What init fills in and what you fill in
 
@@ -113,7 +130,10 @@ excludes it. Unscored string claims remain allowed.
 
 Ordinary unscored claims remain strings. Integers in a rational are canonical
 strings of at most 256 characters; the fraction must be reduced with a positive
-denominator. Challenge rules decide which coefficients and theorems are eligible.
+denominator by default. The optional protected [CurveSmash adapter](preprocessing.md)
+can reduce valid claim fractions without changing their value or original bytes;
+protected objective bounds still require reduced form. Challenge rules decide
+which coefficients and theorems are eligible.
 Proofs use the existing submission/file limits, not the 16 KiB checker-input limit.
 Do not copy proof text into the manifest or split it into tool-input chunks.
 

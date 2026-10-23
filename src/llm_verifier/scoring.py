@@ -4,7 +4,7 @@ from fractions import Fraction
 import math
 import re
 
-from .errors import VerifierError
+from .errors import VerifierError, error_context
 from .files import relative
 from .jsonutil import digest, integer, keys, text
 
@@ -21,9 +21,24 @@ configured. Positive infinity retains exact records with null numeric scores
 because Yukon cannot order infinity.
 """
 
-def score_value(value):
+def review_instructions(config):
+    if config.get("acceptance_policy", "atomic-claims-v1") == "exploratory-v1":
+        return REVIEW_INSTRUCTIONS.replace(
+            "ALL original submission.claims are established as written",
+            "ALL original submission.claims meet exploratory-v1 exactly as written"
+        ).replace("atomic validity", "whole-submission exploratory validity")
+    return REVIEW_INSTRUCTIONS
+
+
+def canonical_score(value):
+    """Validate bounded rational syntax and return its exact reduced spelling.
+
+    Intake still requires that spelling unless protected preprocessing opts in.
+    Accepted-source parsing may validate an equivalent original spelling without
+    rewriting the authenticated manifest or changing its declared claim.
+    """
     if value == "positive_infinity":
-        return None
+        return value
     keys(value, {"numerator", "denominator"})
     n, d = value["numerator"], value["denominator"]
     if (type(n) is not str or type(d) is not str or not 1 <= len(n) <= 256
@@ -31,8 +46,16 @@ def score_value(value):
             or not re.fullmatch(r"[1-9][0-9]*", d)):
         raise VerifierError("canonical_rational_required")
     exact = Fraction(int(n), int(d))
-    if (str(exact.numerator), str(exact.denominator)) != (n, d):
+    return {"numerator": str(exact.numerator), "denominator": str(exact.denominator)}
+
+
+def score_value(value):
+    normalized = canonical_score(value)
+    if normalized == "positive_infinity":
+        return None
+    if normalized != value:
         raise VerifierError("reduced_rational_required")
+    exact = Fraction(int(value["numerator"]), int(value["denominator"]))
     projected = float(exact)
     if not math.isfinite(projected) or (projected == 0 and exact != 0):
         raise VerifierError("unrepresentable_score")
@@ -45,7 +68,8 @@ def validate_claim(claim, files):
         return
     keys(claim, {"statement", "score", "evidence"})
     text(claim["statement"], 8000)
-    score_value(claim["score"])
+    with error_context("score"):
+        score_value(claim["score"])
     paths = claim["evidence"]
     if type(paths) is not list or not 1 <= len(paths) <= 32:
         raise VerifierError("claim_evidence_required")

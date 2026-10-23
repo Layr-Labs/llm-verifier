@@ -182,12 +182,10 @@ class Contracts(unittest.TestCase):
             manifest=read_json(root/'submission/submission.json')
             manifest['experiments'][0]['input_schema']['required']=[]
             write_json(root/'submission/submission.json',manifest)
-            intake=intake_snapshot(effective,root/'submission')
-            with patch.object(DockerRunner,'run',return_value=output_record('completed',0,b'{}',b'')):
-                initial=pipeline.execute(intake)
-            with patch.object(HttpTransport,'request') as transport,self.assertRaisesRegex(VerifierError,'optional_inputs_require_json_object'):
-                pipeline.review(intake,initial)
+            with patch.object(DockerRunner,'run') as runner, patch.object(HttpTransport,'request') as transport, self.assertRaisesRegex(VerifierError,'optional_inputs_require_json_object'):
+                intake_snapshot(effective,root/'submission')
             transport.assert_not_called()
+            runner.assert_not_called()
             # No unused input variants occur in final or disabled schemas.
             final=response_schema(effective['config'],manifest,final=True)
             self.assertEqual(final['properties']['requests']['maxItems'],0)

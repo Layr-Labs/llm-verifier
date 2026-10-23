@@ -10,8 +10,7 @@ from .config import submission_references_enabled, verify_effective
 from .errors import VerifierError
 from .files import snapshot
 from .jsonutil import canonical, digest, keys, loads, sha
-from .submission import manifest_from
-from .scoring import validate_objective_claims
+from .submission import preflight_manifest
 from .prior import intake_imports, consumer_key
 from .jsonutil import integer
 
@@ -56,12 +55,18 @@ def admit_submission(effective, manifest):
         raise VerifierError("submission_references_disabled")
 
 
-def intake_snapshot(effective, candidate_root, context=None, simulation=False, *, accepted_results_context=None):
+def preflight_snapshot(effective, candidate_root):
+    """Snapshot and check a selected package without Docker, credentials or lookup."""
     verify_effective(effective)
     files = snapshot(candidate_root, effective["config"]["limits"])
-    manifest = manifest_from(files, effective["config"]["limits"], effective["config"].get("checkers", []))
-    validate_objective_claims(effective["config"]["objectives"], manifest["claims"])
+    manifest, audit = preflight_manifest(files, effective["config"])
     admit_submission(effective, manifest)
+    return {"files": files, "manifest": manifest, **({"preprocessing": audit} if audit is not None else {})}
+
+
+def intake_snapshot(effective, candidate_root, context=None, simulation=False, *, accepted_results_context=None):
+    prepared = preflight_snapshot(effective, candidate_root)
+    files, manifest = prepared["files"], prepared["manifest"]
     code = implementation()
     context = dict(context or {"kind": "local", "revision": "unasserted; use content hash"})
     created = time.time_ns()
@@ -75,18 +80,20 @@ def intake_snapshot(effective, candidate_root, context=None, simulation=False, *
     bindings = {"evaluation_id": uuid.uuid4().hex, "config": digest(effective),
                 "submission": digest(files), "verifier": code["content_sha256"], "context": digest(context)}
     intake_imports(prior_snapshot, manifest, bindings["evaluation_id"], created)
-    return seal("intake", bindings, {"effective": effective, "files": files,
-                                     "manifest": manifest, "implementation": code, "context": context, "created_at_ns": created, "prior_snapshot": prior_snapshot}, simulation=simulation)
+    return seal("intake", bindings, {"effective": effective, **prepared,
+                                     "implementation": code, "context": context, "created_at_ns": created, "prior_snapshot": prior_snapshot}, simulation=simulation)
 
 
 def verify_intake(intake, expected=None):
     data = verify_envelope(intake, "intake", parents=[])
     if expected is not None and intake["sha256"] != expected:
         raise VerifierError("unexpected_intake")
-    keys(data, {"effective", "files", "manifest", "implementation", "context", "created_at_ns", "prior_snapshot"})
+    keys(data, {"effective", "files", "manifest", "implementation", "context", "created_at_ns", "prior_snapshot"}, {"preprocessing"})
     verify_effective(data["effective"])
-    manifest = manifest_from(data["files"], data["effective"]["config"]["limits"], data["effective"]["config"].get("checkers", []))
-    validate_objective_claims(data["effective"]["config"]["objectives"], manifest["claims"])
+    manifest, audit = preflight_manifest(data["files"], data["effective"]["config"])
+    if (("preprocessing" in data) != (audit is not None)
+            or canonical(data.get("preprocessing")) != canonical(audit)):
+        raise VerifierError("preprocessing_binding")
     if canonical(manifest) != canonical(data["manifest"]):
         raise VerifierError("manifest_binding")
     admit_submission(data["effective"], manifest)

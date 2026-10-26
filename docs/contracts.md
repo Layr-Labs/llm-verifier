@@ -21,8 +21,10 @@ follow-up batches require both execution evidence and a final judgment. A second
 request round is a protocol failure. With no requests, both follow-up jobs may be
 skipped without skipping finalization.
 
-Judgments contain exactly `valid`, `scores`, `reason`, `evidence_refs` and
-`review_standard`. Validity accepts or rejects the entire original manifest claim
+By default judgments contain exactly `valid`, `scores`, `reason`, `evidence_refs` and
+`review_standard`. Protected `structured_claims: "atomic-v1"` additionally requires
+`structured_claims_sha256`, acknowledging the exact original structured claim set;
+see [structured claims](structured-claims.md). Validity accepts or rejects the entire original manifest claim
 set as written; no second claims list or report can redefine it. Reason is
 nonempty, bounded to 4,000 UTF-16 code units for Yukon. Valid judgments cite at
 least one known source, run or prior reference. References are

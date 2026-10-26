@@ -10,6 +10,7 @@ from .jsonutil import canonical, integer, keys, loads, number, text
 from .scoring import validate_sources
 from .evidence import POLICY_ID, policy_id
 from .preprocessing import validate_adapter
+from .structured_claims import validate_config as validate_structured_config
 
 DEFAULT_IMAGE = "python:3.12.12-slim-bookworm@sha256:2986c55feb36e6cae00fa1fefb454283e4b33f35e75ff8bdd123b134130be301"
 IMAGE = re.compile(r"(?:docker\.io/library/)?python:[A-Za-z0-9._-]+@sha256:[a-f0-9]{64}\Z")
@@ -39,11 +40,12 @@ def identifier(value):
 
 
 def normalize(raw):
-    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy", "manifest_preprocessor", "acceptance_policy", "rules_files", "submission_selector"})
+    keys(raw, {"version", "id", "rules_path", "review_standard", "objectives", "allow_unscored", "policies", "supported_policies", "provider"}, {"limits", "runtime", "checkers", "evidence_policy", "manifest_preprocessor", "acceptance_policy", "rules_files", "submission_selector", "structured_claims"})
     if type(raw["version"]) is not int or raw["version"] != 1:
         raise VerifierError("unsupported_config_version")
     if raw.get("acceptance_policy", POLICY_ID) not in (POLICY_ID, "exploratory-v1"):
         raise VerifierError("unsupported_acceptance_policy")
+    validate_structured_config(raw)
     identifier(raw["id"])
     if "manifest_preprocessor" in raw:
         validate_adapter(raw["manifest_preprocessor"])

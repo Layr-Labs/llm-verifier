@@ -111,7 +111,7 @@ def original_manifest(record):
         # normalized by the origin's protected manifest adapter. Validate an
         # equivalent copy; never rewrite exported bytes or trust a new claim.
         checked = {**claim, "score": canonical_score(claim["score"])} if type(claim) is dict and "score" in claim else claim
-        validate_claim(checked, paths)
+        validate_claim(checked, paths, allow_structured=True)
     references(manifest.get("prior_results", []))
     return manifest
 

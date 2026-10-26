@@ -8,12 +8,14 @@ from .scoring import validate_claim, validate_objective_claims
 from .prior import references
 from .jsonutil import canonical, keys, loads, text
 from .preprocessing import preprocess
+from .structured_claims import enabled as structured_enabled
 
 
 def preflight_manifest(files, config):
     """The same credential-free deterministic gates used at every intake."""
     effective_files, audit = preprocess(files, config)
-    manifest = manifest_from(effective_files, config["limits"], config.get("checkers", []))
+    manifest = manifest_from(effective_files, config["limits"], config.get("checkers", []),
+                             allow_structured=structured_enabled(config))
     validate_objective_claims(config["objectives"], manifest["claims"])
     # Delayed import: judgment validation also uses submission request validation.
     from .judgment import response_schema
@@ -22,15 +24,15 @@ def preflight_manifest(files, config):
     return manifest, audit
 
 
-def manifest_from(files, limits, checkers=()):
+def manifest_from(files, limits, checkers=(), *, allow_structured=False):
     validate_files(files, limits)
     if "submission.json" not in files:
         raise VerifierError("missing_submission_manifest")
     with error_context("submission.json"):
-        return _manifest_from(files, limits, checkers)
+        return _manifest_from(files, limits, checkers, allow_structured=allow_structured)
 
 
-def _manifest_from(files, limits, checkers):
+def _manifest_from(files, limits, checkers, *, allow_structured=False):
     manifest = loads(files["submission.json"]["text"])
     keys(manifest, {"version", "title", "claims", "experiments"}, {"checks", "prior_results"})
     if type(manifest["version"]) is not int or manifest["version"] != 1:
@@ -42,7 +44,7 @@ def _manifest_from(files, limits, checkers):
         raise VerifierError("claim_count")
     for index, claim in enumerate(claims):
         with error_context("claims", index):
-            validate_claim(claim, files)
+            validate_claim(claim, files, allow_structured=allow_structured)
     entries = manifest["experiments"]
     if type(entries) is not list or len(entries) > 16:
         raise VerifierError("experiment_count")

@@ -6,7 +6,8 @@ import re
 
 from .errors import VerifierError, error_context
 from .files import relative
-from .jsonutil import digest, integer, keys, text
+from .jsonutil import integer, keys, text
+from .structured_claims import source_sha256 as source_digest, validate as validate_structured
 
 
 REVIEW_INSTRUCTIONS = """When score_gate contains bindings, return scores=null.
@@ -62,14 +63,22 @@ def score_value(value):
     return projected
 
 
-def validate_claim(claim, files):
+def validate_claim(claim, files, *, allow_structured=False):
     if type(claim) is str:
         text(claim, 8000)
         return
-    keys(claim, {"statement", "score", "evidence"})
+    structured = type(claim) is dict and "structured" in claim
+    if structured and not allow_structured:
+        raise VerifierError("structured_claims_disabled")
+    keys(claim, {"statement", "evidence"} if structured else {"statement", "score", "evidence"},
+         {"score", "structured"} if structured else ())
     text(claim["statement"], 8000)
-    with error_context("score"):
-        score_value(claim["score"])
+    if structured:
+        with error_context("structured"):
+            validate_structured(claim["structured"])
+    if "score" in claim:
+        with error_context("score"):
+            score_value(claim["score"])
     paths = claim["evidence"]
     if type(paths) is not list or not 1 <= len(paths) <= 32:
         raise VerifierError("claim_evidence_required")
@@ -102,7 +111,7 @@ def validate_objective_claims(objectives, claims):
         if "claim" not in source or source["claim"] >= len(claims):
             continue
         claim = claims[source["claim"]]
-        if type(claim) is not dict:
+        if type(claim) is not dict or "score" not in claim:
             continue  # An unscored lemma needs no numeric declaration.
         if claim["score"] == "positive_infinity" and objective["direction"] != "+":
             raise VerifierError("terminal_requires_maximization")
@@ -155,12 +164,12 @@ def bindings(data, runs, required):
             continue
         # Binding the complete snapshot also includes every auxiliary file. No
         # participant-supplied digest or second copy of a proof is necessary.
-        source_sha256 = digest({"source": source, "files": digest(data["files"])})
+        source_sha256 = source_digest(data, source)
         record, value, status = None, None, "unavailable"
         if "claim" in source:
             claims = data["manifest"]["claims"]
             claim = claims[source["claim"]] if source["claim"] < len(claims) else None
-            if type(claim) is dict:
+            if type(claim) is dict and "score" in claim:
                 record = claim["score"]
                 value = score_value(record)
                 status = "ready"

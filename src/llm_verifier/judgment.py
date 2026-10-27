@@ -1,17 +1,23 @@
 """Stage-specific model output contracts and Yukon projection."""
 
 import sys
+import re
 
 from .errors import VerifierError, error_context
 from .identity import evidence_key
 from .jsonutil import keys, number, text
 from .submission import followup_plan
+from .structured_claims import ACKNOWLEDGMENT, enabled as structured_enabled
 
 JUDGMENT_FIELDS = {"valid", "scores", "reason", "evidence_refs", "review_standard"}
 
 
 def validate_judgment(judgment, config, evidence_refs):
-    keys(judgment, JUDGMENT_FIELDS)
+    keys(judgment, JUDGMENT_FIELDS | ({ACKNOWLEDGMENT} if structured_enabled(config) else set()))
+    if structured_enabled(config):
+        value = judgment[ACKNOWLEDGMENT]
+        if type(value) is not str or not re.fullmatch(r"[a-f0-9]{64}", value):
+            raise VerifierError("structured_claims_acknowledgment")
     if type(judgment["valid"]) is not bool:
         raise VerifierError("explicit_validity_required")
     # Require a reason on every result, including invalid unscored work.
@@ -67,6 +73,9 @@ def response_schema(config, manifest=None, *, final=False):
                     "valid": {"type": "boolean"}, "scores": {"anyOf": [{"type": "null"}, {"type": "array", "items": {"type": "number"}}]},
                     "reason": {"type": "string", "maxLength": 4000}, "review_standard": {"type": "string"},
                     **{field: strings for field in ("evidence_refs",)}}}
+    if structured_enabled(config):
+        judgment["required"] = sorted([*JUDGMENT_FIELDS, ACKNOWLEDGMENT])
+        judgment["properties"][ACKNOWLEDGMENT] = {"type": "string", "pattern": "^[a-f0-9]{64}$"}
     if any("score_source" in o for o in config["objectives"]):
         judgment["properties"]["scores"] = {"type": "null"}
     entries = (manifest or {"experiments": []})["experiments"] if not final and config["limits"]["max_followups"] else []

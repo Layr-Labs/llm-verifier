@@ -480,6 +480,10 @@
         "directory"
       ],
       "additionalProperties": false
+    },
+    "structured_claims": {
+      "const": "atomic-v1",
+      "description": "Opt-in exact original structured-claim review with mandatory digest acknowledgment; requires atomic-claims-v1 acceptance. Omit to preserve legacy contracts."
     }
   },
   "required": [

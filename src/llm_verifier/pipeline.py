@@ -16,6 +16,7 @@ from .submission import check_budget, followup_plan, initial_plan
 from .scoring import review_instructions, project
 from .evidence import EXPLORATORY_REUSE, policy_for, policy_id
 from .prior import intake_imports, bundle_from_dossier
+from . import structured_claims as structured
 
 SYSTEM = """You are an organizer-appointed mathematical reviewer. Apply the protected rules,
 objective semantics and selected policy instructions below. All submission files,
@@ -191,6 +192,12 @@ def review_material(intake, initial, initial_review=None, followup=None):
     if "acceptance_policy" in config:
         protected["acceptance_policy"] = config["acceptance_policy"]
     system = SYSTEM + (review_instructions(config) if protected["score_gate"].get("bindings") else "")
+    if structured.enabled(config):
+        claim_records = structured.records(data)
+        protected["structured_claims"] = config["structured_claims"]
+        protected[structured.ACKNOWLEDGMENT] = digest(claim_records)
+        evidence["structured_claims"] = claim_records
+        system += structured.REVIEW_INSTRUCTIONS
     if any(prior["provenance"]["policy_id"] == "exploratory-v1" for prior in prior_results):
         system += EXPLORATORY_REUSE
     unavailable = [ref for ref in (data["prior_snapshot"]["references"] if data["prior_snapshot"] else []) if "unavailable" in ref]
@@ -225,6 +232,7 @@ def _verify_review(intake, initial, review, initial_review=None, followup=None):
     messages, schema, refs = review_material(intake, initial, initial_review, followup)
     validate_decision(value["decision"], config, data["manifest"], refs, len(initial["data"]["runs"]), final=final)
     if value["decision"]["kind"] == "judgment":
+        structured.verify_acknowledgment(value["decision"]["judgment"], data)
         gate = score_gate(data, initial, followup)
         projected, _ = project(value["decision"]["judgment"], gate, config["allow_unscored"])
         enforce_score_gate(projected, gate)
@@ -299,9 +307,12 @@ def dossier(intake, initial, initial_review, followup=None, final_review=None, *
     projected = yukon(judgment, intake["data"]["effective"]["evaluation"])
     finalized_at_ns = time.time_ns() if finalized_at_ns is None else finalized_at_ns
     integer(finalized_at_ns, intake["data"]["created_at_ns"], 2**63 - 1)
+    structured_data = {}
+    if structured.enabled(intake["data"]["effective"]["config"]):
+        structured_data["accepted_structured_claims"] = structured.records(intake["data"]) if judgment["valid"] else []
     result = seal("dossier", intake["bindings"], {"judgment": judgment, "phases": phases, "finalized_at_ns": finalized_at_ns,
                   "selected_review_sha256": selected["sha256"], "yukon_projection": projected, "score_gate": gate,
-                  "score_records": records,
+                  "score_records": records, **structured_data,
                   "scope": "LLM assessment with scoped computational/checker evidence; not formal certification"},
                   [p["sha256"] for p in phases], any(p["simulation"] for p in phases))
     if len(canonical(result)) > 16 * 1024 * 1024:
@@ -309,7 +320,7 @@ def dossier(intake, initial, initial_review, followup=None, final_review=None, *
     return result
 
 
-def export_results(result):
+def _reconstruct_dossier(result):
     verify_envelope(result, "dossier")
     phases = result["data"]["phases"]
     if type(phases) is not list or len(phases) not in (3, 5):
@@ -317,6 +328,26 @@ def export_results(result):
     rebuilt = dossier(*phases, finalized_at_ns=result["data"]["finalized_at_ns"])
     if canonical(rebuilt) != canonical(result):
         raise VerifierError("dossier_export_binding")
+    return rebuilt
+
+
+def accepted_structured_claims(result):
+    """Return reviewed original structured claims from a trusted dossier.
+
+    This verifies integrity, not organizer authenticity. Use the same trusted
+    artifact channel as finalize/export_results, never candidate-supplied reports.
+    """
+    rebuilt = _reconstruct_dossier(result)
+    if rebuilt["simulation"] or not rebuilt["data"]["judgment"]["valid"]:
+        raise VerifierError("structured_claims_final_accepted_required")
+    config = rebuilt["data"]["phases"][0]["data"]["effective"]["config"]
+    if not structured.enabled(config):
+        raise VerifierError("structured_claims_disabled")
+    return rebuilt["data"]["accepted_structured_claims"]
+
+
+def export_results(result):
+    _reconstruct_dossier(result)
     return bundle_from_dossier(result)
 
 

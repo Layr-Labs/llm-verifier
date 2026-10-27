@@ -28,7 +28,6 @@
             "additionalProperties": false,
             "required": [
               "statement",
-              "score",
               "evidence"
             ],
             "properties": {
@@ -72,8 +71,25 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "structured": {
+                "type": "object",
+                "minProperties": 1,
+                "description": "Exact inert JSON assertions reviewed as part of this original claim. Requires protected structured_claims: atomic-v1. At most 16 KiB canonical JSON; domain interpretation belongs to protected rules. Does not supply a numeric score."
               }
-            }
+            },
+            "anyOf": [
+              {
+                "required": [
+                  "score"
+                ]
+              },
+              {
+                "required": [
+                  "structured"
+                ]
+              }
+            ]
           }
         ]
       }

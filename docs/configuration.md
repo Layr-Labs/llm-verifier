@@ -16,6 +16,7 @@ Required fields:
 | `id` | Unique bounded ASCII challenge identifier |
 | `rules_path` | Bounded relative POSIX path to UTF-8 rules, outside submission |
 | `review_standard` | Exact label required in every judgment |
+| `structured_claims` | Optional `"atomic-v1"`; [exact structured data and reviewer acknowledgment](structured-claims.md), requires atomic acceptance |
 | `objectives` | 0–8 ordered objects: `name`, `direction` (`+`/`-`), `unit`, `semantics`; optional `score_source`, inclusive `score_minimum` / `score_maximum` |
 | `allow_unscored` | Whether an accepted entire declared set can remain unscored |
 | `policies` | Default `scoring` and `validity` JSON selectors |
@@ -188,7 +189,7 @@ escaped field/path names and missing/unexpected keys, without field values.
 Every bounded regular UTF-8 file in the submission tree is snapshotted and shown
 to the judge. Files are inert data until a declared Python entrypoint is executed
 inside Docker. `submission.json` requires `version: 1`, `title`, `claims`
-(nonempty list of bounded strings or [structured scored claims](authoring.md#score-sources)),
+(nonempty list of bounded strings, [scored claims](authoring.md#score-sources), or opt-in [structured claim data](structured-claims.md)),
 and `experiments` (possibly empty). It may
 also declare `checks: [{check, inputs}]`, one payload per registered checker ID;
 see [protected checks](checkers.md). All other fields are rejected.

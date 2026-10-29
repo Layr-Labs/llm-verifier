@@ -8,7 +8,7 @@ import sys
 from .artifacts import intake_snapshot, preflight_snapshot, verify_intake
 from .config import load_config, resolve_submission
 from .errors import VerifierError
-from .files import distinct_paths, clear_output, outside, read_bytes, read_json, relative, write_json
+from .files import distinct_paths, clear_output, ensure_directory, outside, read_bytes, read_json, relative, write_json
 from .jsonutil import loads
 from .pipeline import execute, finalize, review, export_results
 from .workflow import github_output, prepare, prepare_runtime
@@ -66,9 +66,11 @@ def parser():
     cmd = sub.add_parser("review-initial", help="OpenAI review using OPENAI_API_KEY; never executes candidates")
     artifacts(cmd, True)
     cmd.add_argument("--out", required=True)
+    cmd.add_argument("--failure-out", help="Separate diagnostic artifact; defaults to OUT.failure.json")
     cmd = sub.add_parser("review-final", help="OpenAI final review using OPENAI_API_KEY, judgment only")
     artifacts(cmd, True, True, True)
     cmd.add_argument("--out", required=True)
+    cmd.add_argument("--failure-out", help="Separate diagnostic artifact; defaults to OUT.failure.json")
     cmd = sub.add_parser("finalize", help="Validate chain and emit exactly one Yukon score plus dossier")
     artifacts(cmd, True, True)
     cmd.add_argument("--followup")
@@ -150,6 +152,13 @@ def run(args):
         if args.receipt:
             clear_output(args.receipt)
     elif hasattr(args, "out"):
+        if args.command in {"review-initial", "review-final"}:
+            args.failure_out = args.failure_out or args.out + ".failure.json"
+            distinct_paths([args.intake, args.initial, getattr(args, "initial_review", None),
+                            getattr(args, "followup", None)], [args.out, args.failure_out])
+            ensure_directory(Path(args.out).parent)
+            ensure_directory(Path(args.failure_out).parent)
+            clear_output(args.failure_out)
         if args.command in {"intake", "simulate"}:
             outside(args.out, Path(args.root) / relative(args.submission))
         clear_output(args.out)
@@ -181,7 +190,7 @@ def run(args):
     elif args.command == "followup":
         result = execute(intake, first, initial)
     elif args.command in {"review-initial", "review-final"}:
-        result = review(intake, initial, first, followup)
+        result = review(intake, initial, first, followup, failure_out=args.failure_out)
         github_output("kind", result["data"]["decision"]["kind"])
     else:
         if args.score_dir and intake["data"]["context"].get("score_path") != args.score_path:

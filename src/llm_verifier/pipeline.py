@@ -292,7 +292,7 @@ def verify_initial_review(intake, initial, review):
     return _verify_review(intake, initial, review)
 
 
-def review(intake, initial, initial_review=None, followup=None, *, provider=None, providers=None):
+def review(intake, initial, initial_review=None, followup=None, *, provider=None, providers=None, failure_out=None):
     data = _data(intake)
     config = data["effective"]["config"]
     verify_experiments(intake, initial)
@@ -308,34 +308,38 @@ def review(intake, initial, initial_review=None, followup=None, *, provider=None
         parents += [initial_review, followup]
     elif followup is not None:
         raise VerifierError("unexpected_followup_evidence")
-    if "judging" in data["effective"]:
-        from .committee import run
-        if provider is not None:
-            raise VerifierError("committee_requires_member_providers")
-        value, simulated = run(data["effective"]["judging"]["committee"], config, data["manifest"],
-                               evidence_refs(intake, initial, followup), len(initial["data"]["runs"]), final,
-                               _committee_material(intake, initial, initial_review, followup), prior,
-                               providers=providers, files=data["files"],
-                               plan=initial_review["data"].get("region_plan") if final else None)
-        result = seal("final_review" if final else "initial_review", intake["bindings"], value,
-                      [p["sha256"] for p in parents], simulated or any(p["simulation"] for p in parents))
+    from .diagnostics import capture_failure, review_call
+    simulation = any(p["simulation"] for p in parents) or providers is not None or (
+        provider is not None and (type(provider) is not OpenAI or provider.simulation))
+    with capture_failure(failure_out, intake, parents, "final" if final else "initial", simulation) as diagnostics:
+        if "judging" in data["effective"]:
+            from .committee import run
+            if provider is not None:
+                raise VerifierError("committee_requires_member_providers")
+            value, simulated = run(data["effective"]["judging"]["committee"], config, data["manifest"],
+                                   evidence_refs(intake, initial, followup), len(initial["data"]["runs"]), final,
+                                   _committee_material(intake, initial, initial_review, followup), prior,
+                                   providers=providers, capture=diagnostics, files=data["files"],
+                                   plan=initial_review["data"].get("region_plan") if final else None)
+            result = seal("final_review" if final else "initial_review", intake["bindings"], value,
+                          [p["sha256"] for p in parents], simulated or any(p["simulation"] for p in parents))
+            _verify_review(intake, initial, result, initial_review, followup)
+            return result
+        if providers is not None:
+            raise VerifierError("member_providers_require_judging")
+        messages, schema, refs = review_material(intake, initial, initial_review, followup)
+        seconds = config["limits"]["total_review_seconds"] - prior["elapsed_seconds"]
+        requests = config["limits"]["total_provider_requests"] - prior["attempts"]
+        if seconds <= 0 or requests <= 0:
+            raise InfrastructureError("review_budget_exhausted")
+        provider = provider or OpenAI(config["provider"])
+        decision, provenance = review_call(provider, config["provider"], messages, schema, seconds, requests, diagnostics)
+        validate_decision(decision, config, data["manifest"], refs, len(initial["data"]["runs"]), final=final)
+        simulation = any(p["simulation"] for p in parents) or type(provider) is not OpenAI or provider.simulation
+        result = seal("final_review" if final else "initial_review", intake["bindings"], {"decision": decision, "provenance": provenance},
+                      [p["sha256"] for p in parents], simulation)
         _verify_review(intake, initial, result, initial_review, followup)
         return result
-    if providers is not None:
-        raise VerifierError("member_providers_require_judging")
-    messages, schema, refs = review_material(intake, initial, initial_review, followup)
-    seconds = config["limits"]["total_review_seconds"] - prior["elapsed_seconds"]
-    requests = config["limits"]["total_provider_requests"] - prior["attempts"]
-    if seconds <= 0 or requests <= 0:
-        raise InfrastructureError("review_budget_exhausted")
-    provider = provider or OpenAI(config["provider"])
-    decision, provenance = provider.review(messages, schema, seconds, requests)
-    validate_decision(decision, config, data["manifest"], refs, len(initial["data"]["runs"]), final=final)
-    simulation = any(p["simulation"] for p in parents) or type(provider) is not OpenAI or provider.simulation
-    result = seal("final_review" if final else "initial_review", intake["bindings"], {"decision": decision, "provenance": provenance},
-                  [p["sha256"] for p in parents], simulation)
-    _verify_review(intake, initial, result, initial_review, followup)
-    return result
 
 
 def dossier(intake, initial, initial_review, followup=None, final_review=None, *, finalized_at_ns=None):

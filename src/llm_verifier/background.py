@@ -21,14 +21,17 @@ ERRORS = frozenset({
 ID = re.compile(r"resp_[A-Za-z0-9_-]{1,190}\Z")
 
 
-def payload(body, limit):
+def payload(body, limit, *, key=""):
     try:
         value = loads(body, limit=limit)
         if type(value) is not dict or value.get("object") != "response":
             raise VerifierError("envelope")
         return value
     except (VerifierError, KeyError, TypeError, ValueError):
-        raise InfrastructureError("provider_background_invalid_envelope") from None
+        from .diagnostics import response_capture
+        error = InfrastructureError("provider_background_invalid_envelope")
+        error.response_capture = response_capture(body[:limit], key)
+        raise error from None
 
 
 def response_id(value):
@@ -110,7 +113,7 @@ def request_background(body, key, timeout, limit, request, *, sleeper=time.sleep
         response = http("POST", "/v1/responses", body)
         if response.status != 200:
             return response.status, b""
-        current = payload(response.body, limit)
+        current = payload(response.body, limit, key=key)
         identifier = response_id(current)
         polls = 0
         while True:
@@ -139,7 +142,14 @@ def request_background(body, key, timeout, limit, request, *, sleeper=time.sleep
                 continue
             if response.status != 200:
                 raise InfrastructureError("provider_background_http_failed")
-            current = payload(response.body, limit)
+            current = payload(response.body, limit, key=key)
+    except InfrastructureError as exc:
+        # Only allowlisted model output/usage crosses the worker pipe; no
+        # reasoning, headers or arbitrary provider error payloads are retained.
+        if "current" in locals() and not hasattr(exc, "response_capture"):
+            from .diagnostics import response_capture
+            exc.response_capture = response_capture(canonical(current), key)
+        raise
     finally:
         if identifier is not None:
             if not terminal:

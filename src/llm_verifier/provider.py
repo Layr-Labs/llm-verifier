@@ -38,6 +38,13 @@ class HttpTransport:
         deadline = time.monotonic() + timeout
         conn = http.client.HTTPSConnection("api.openai.com", timeout=timeout)
         response = None
+        output = bytearray()
+        def failure(code):
+            from .diagnostics import response_capture
+            error = InfrastructureError(code)
+            if output:
+                error.response_capture = response_capture(bytes(output), api_key)
+            return error
         try:
             conn.request(method, path, body=body,
                          headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json",
@@ -61,14 +68,14 @@ class HttpTransport:
                     raise InfrastructureError("provider_response_limit")
                 if not chunk:
                     return HttpResponse(response.status, bytes(output))
-        except InfrastructureError:
-            raise
+        except InfrastructureError as exc:
+            raise failure(exc.args[0]) from None
         except TimeoutError:
-            raise InfrastructureError("provider_timeout") from None
+            raise failure("provider_timeout") from None
         except (http.client.RemoteDisconnected, http.client.IncompleteRead, ConnectionError, ssl.SSLEOFError):
-            raise InfrastructureError("provider_connection_closed") from None
+            raise failure("provider_connection_closed") from None
         except Exception:
-            raise InfrastructureError("provider_transport_failed") from None
+            raise failure("provider_transport_failed") from None
         finally:
             if response is not None:
                 response.close()
@@ -91,13 +98,18 @@ class HttpTransport:
             if remaining <= 0:
                 raise subprocess.TimeoutExpired("provider_worker", timeout)
             output, _ = process.communicate(metadata + body, timeout=remaining)
-            if process.returncode != 0 or len(output) > limit + 16:
+            from .diagnostics import MAX_TEXT, bounded_capture
+            if process.returncode != 0 or len(output) > limit + MAX_TEXT + 4096:
                 raise InfrastructureError("provider_transport_failed")
             status, payload = output.split(b"\n", 1)
             if status == b"error":
-                code = payload.decode("ascii")
+                code, _, captured = payload.partition(b"\n")
+                code = code.decode("ascii")
                 if code in TRANSPORT_ERRORS:
-                    raise InfrastructureError(code)
+                    error = InfrastructureError(code)
+                    if captured:
+                        error.response_capture = bounded_capture(loads(captured, MAX_TEXT + 4096))
+                    raise error
                 raise InfrastructureError("provider_transport_failed")
             if status not in {str(n).encode() for n in range(100, 600)}:
                 raise InfrastructureError("provider_transport_failed")
@@ -143,7 +155,10 @@ def _http_worker():
     except InfrastructureError as exc:
         # Only fixed diagnostic categories cross the private worker pipe.
         if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
-            sys.stdout.buffer.write(b"error\n" + exc.args[0].encode("ascii"))
+            from .diagnostics import bounded_capture
+            captured = getattr(exc, "response_capture", None)
+            extra = b"\n" + canonical(bounded_capture(captured)) if captured is not None else b""
+            sys.stdout.buffer.write(b"error\n" + exc.args[0].encode("ascii") + extra)
             sys.stdout.buffer.flush()
             return
         raise SystemExit(1) from None
@@ -224,7 +239,16 @@ class OpenAI:
         self.simulation = transport is not None
         self.sleeper = sleeper
 
-    def review(self, messages, schema, seconds, requests):
+    def review(self, messages, schema, seconds, requests, *, observer=None):
+        try:
+            return self._review(messages, schema, seconds, requests, observer)
+        except InfrastructureError as exc:
+            if observer is not None:
+                from .diagnostics import error_code
+                observer({"error": error_code(exc)})
+            raise
+
+    def _review(self, messages, schema, seconds, requests, observer):
         config = self.config
         response_format = {"type": config["response_format"]}
         if config["response_format"] == "json_schema":
@@ -260,6 +284,15 @@ class OpenAI:
             try:
                 response = self.transport.request(body, self._key, min(remaining, config["timeout_seconds"]), config["max_response_bytes"])
             except InfrastructureError as exc:
+                if observer is not None:
+                    from .diagnostics import bounded_capture, error_code
+                    event = {"attempt": attempt, "elapsed_seconds": time.monotonic() - started,
+                             "error": error_code(exc) if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS
+                             else "provider_transport_failed"}
+                    captured = getattr(exc, "response_capture", None)
+                    if captured is not None:
+                        event["response"] = bounded_capture(captured, self._key)
+                    observer(event)
                 # Preserve only known static categories, never arbitrary text.
                 if len(exc.args) == 1 and type(exc.args[0]) is str and exc.args[0] in TRANSPORT_ERRORS:
                     if exc.args[0] == "provider_response_limit" or exc.args[0] in BACKGROUND_ERRORS:
@@ -269,7 +302,19 @@ class OpenAI:
                     last_failure = "provider_transport_failed"
             except Exception:
                 last_failure = "provider_transport_failed"
+                if observer is not None:
+                    observer({"attempt": attempt, "elapsed_seconds": time.monotonic() - started,
+                              "error": last_failure})
             if response is not None:
+                if observer is not None:
+                    from .diagnostics import response_capture
+                    event = {"attempt": attempt, "elapsed_seconds": time.monotonic() - started,
+                             "http_status": response.status}
+                    if response.status == 200:
+                        event["response"] = response_capture(response.body[:config["max_response_bytes"]], self._key)
+                        if len(response.body) > config["max_response_bytes"]:
+                            event["response"]["truncated"] = True
+                    observer(event)
                 if len(response.body) > config["max_response_bytes"]:
                     raise InfrastructureError("provider_response_limit")
                 if response.status == 200:

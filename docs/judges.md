@@ -63,7 +63,7 @@ They all retain access to the complete original evidence for context.
    `{region_id, start_line, end_line, complete}`. It must report the entire
    assignment as complete. Partial, missing or mismatched coverage fails the
    review as infrastructure failure; it never becomes an accepting verdict.
-   `region_review_incomplete:<region_id>` identifies a partially checked region.
+   `region_review_incomplete` (the diagnostic call record identifies the region) identifies a partially checked region.
 4. Findings retain the existing blocking/observation semantics. Blocking IDs
    include the worker and region, for example `region/r2/gap`. All survive to
    the existing defense/adjudication protocol, including singleton findings;

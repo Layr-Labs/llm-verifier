@@ -1,0 +1,100 @@
+name: Artifact transfer smoke
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    name: Upload a tiny artifact and trusted helper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      helper_base64: ${{ steps.helper.outputs.helper_base64 }}
+      helper_sha256: ${{ steps.helper.outputs.helper_sha256 }}
+      fixture_sha256: ${{ steps.fixture.outputs.sha256 }}
+      artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-transfer-smoke","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.upload.outputs.artifact-id, steps.upload.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Export standalone helper without installing a wheel
+        id: helper
+        run: python3 -I scripts/artifact_transfer.py emit-bootstrap
+      - name: Write known fixture
+        id: fixture
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          data = b"llm-verifier artifact transfer smoke v1\n"
+          root = Path(os.environ["RUNNER_TEMP"]) / "transfer-fixture"
+          root.mkdir()
+          (root / "payload.txt").write_bytes(data)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("sha256=" + hashlib.sha256(data).hexdigest() + "\n")
+          PY
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        id: upload
+        with:
+          name: llmv-transfer-smoke
+          path: ${{ runner.temp }}/transfer-fixture/
+          if-no-files-found: error
+          retention-days: 1
+
+  download:
+    name: Verify real transfer without checkout or token permissions
+    needs: [prepare]
+    permissions: {}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify the exact uploaded fixture
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [{"artifact":${{ needs.prepare.outputs.artifact }},"path":"smoke"}]
+      - name: Verify fixture bytes and transfer receipt
+        env:
+          EXPECTED_ARTIFACT: ${{ needs.prepare.outputs.artifact }}
+          EXPECTED_FIXTURE_SHA256: ${{ needs.prepare.outputs.fixture_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"])
+          data = (root / "smoke/payload.txt").read_bytes()
+          assert data == b"llm-verifier artifact transfer smoke v1\n", "fixture bytes changed"
+          assert hashlib.sha256(data).hexdigest() == os.environ["EXPECTED_FIXTURE_SHA256"], "fixture digest changed"
+          receipt = json.loads((root / "llmv-transfer-receipt.json").read_text())
+          assert receipt == {
+              "version": 1,
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "delivery_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "artifacts": [{"artifact": json.loads(os.environ["EXPECTED_ARTIFACT"]), "path": "smoke",
+                             "files": {"payload.txt": os.environ["EXPECTED_FIXTURE_SHA256"]}}],
+          }, "transfer receipt changed"
+          PY

@@ -15,7 +15,7 @@ from llm_verifier.provider import HttpResponse, HttpTransport
 from llm_verifier.runner import DockerRunner, output_record
 from llm_verifier.scaffold import check
 from llm_verifier.simulation import simulate
-from tests.support import completion, example, reseal, scripted_model
+from tests.support import completion, example, reseal, scripted_model, request_parts
 from tests.test_committees import committee, finding, report
 
 PROFILE = {"profile": "builtin:math-decomposed-v1"}
@@ -132,7 +132,12 @@ class RegionReview(unittest.TestCase):
             values[2]["assessment"] = "REGION_PRIVATE_MARKER"
             bodies = []
             def request(body, *args):
-                bodies.append(json.loads(body)); return completion(values[len(bodies) - 1])
+                request, member, context = request_parts(body)
+                bodies.append(request)
+                index = (0 if member['stage'] == 'planning' else 1 if member['stage'] == 'review' else
+                         len(values) - 1 if member['stage'] == 'adjudication' else
+                         2 + [r['id'] for r in plan['regions']].index(context['region']['id']))
+                return completion(values[index])
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=request):
                 pipeline.review(intake, initial)
             self.assertIn("numbered_sources", bodies[0]["messages"][1]["content"])
@@ -223,8 +228,16 @@ class RegionReview(unittest.TestCase):
         with committee(judging={**PROFILE, "max_regions": 2}, limits={"total_provider_requests": 6}) as (root, _, intake):
             initial = pipeline.execute(intake); plan = plan_for(intake)
             values = outputs(plan, read_json(root / "simulation.json")["initial_decision"], outcome="dismissed")
-            replies = iter([HttpResponse(503, b"")] + [completion(v) for v in values[:-1]])
-            with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=lambda *args: next(replies)) as http, patch("llm_verifier.provider.time.sleep"):
+            attempts = []
+            def transport(body, *args):
+                _, member, context = request_parts(body)
+                if member['stage'] == 'planning':
+                    attempts.append(1)
+                    return HttpResponse(503, b'') if len(attempts) == 1 else completion(plan)
+                index = (1 if member['stage'] == 'review' else len(values) - 2 if member['stage'] == 'defense' else
+                         2 + [r['id'] for r in plan['regions']].index(context['region']['id']))
+                return completion(values[index])
+            with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=transport) as http, patch("llm_verifier.provider.time.sleep"):
                 with self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
                     pipeline.review(intake, initial)
             self.assertEqual(http.call_count, 6)
@@ -297,7 +310,7 @@ class RegionReview(unittest.TestCase):
             initial = pipeline.execute(intake); plan = plan_for(intake)
             providers = {m["id"]: ScriptedProvider(m["provider"], plan if m["stage"] == "planning" else report())
                          for m in effective["judging"]["committee"]["members"]}
-            with patch("llm_verifier.committee.time.monotonic", side_effect=[0, 1, 3]), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
+            with patch("llm_verifier.committee.time.monotonic", side_effect=__import__("itertools").chain([0, 1], __import__("itertools").repeat(3))), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
                 pipeline.review(intake, initial, providers=providers)
 
 
@@ -345,10 +358,16 @@ class RegionReview(unittest.TestCase):
                 effective = load_config(root, "verifier.json", "submission")
                 intake = intake_snapshot(effective, root / "submission")
                 plan = plan_for(intake); initial = pipeline.execute(intake)
-                responses = iter(outputs(plan, read_json(root / "simulation.json")["initial_decision"], outcome="dismissed"))
+                responses = outputs(plan, read_json(root / "simulation.json")["initial_decision"], outcome="dismissed")
                 bodies = []
                 def request(body, *args):
-                    bodies.append(json.loads(body)); return completion(next(responses))
+                    request, member, context = request_parts(body)
+                    bodies.append(request)
+                    index = (0 if member['stage'] == 'planning' else 1 if member['stage'] == 'review' else
+                             len(responses) - 1 if member['stage'] == 'adjudication' else
+                             len(responses) - 2 if member['stage'] == 'defense' else
+                             2 + [r['id'] for r in plan['regions']].index(context['region']['id']))
+                    return completion(responses[index])
                 with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=request):
                     first = pipeline.review(intake, initial)
                 for body in bodies:

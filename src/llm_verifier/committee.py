@@ -152,7 +152,7 @@ def _resolutions(items, findings, refs, adjudication=False):
         _refs(item["evidence_refs"], refs, required=adjudication and item["outcome"] == "dismissed")
 
 
-def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, files, plan, details):
+def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, files, plan, details, batch=None):
     """The same bounded state machine drives execution and artifact verification."""
     members = committee["members"]
     if committee["protocol"] == "single-v1":
@@ -178,8 +178,9 @@ def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, 
         tasks.extend((worker, regions.assignment(region, frozen, files), worker["id"] + "/" + region["id"])
                      for region in frozen["regions"])
     reviews, findings, requests, requested = [], {}, [], set()
-    for member, context, name in tasks:
-        report = call(member, stage_schema(member, config, manifest, final, decomposed=decomposed), context)
+    prepared = [(m, stage_schema(m, config, manifest, final, decomposed=decomposed), c) for m, c, _ in tasks]
+    reports = batch(prepared) if batch is not None else (call(*task) for task in prepared)
+    for (member, context, name), report in zip(tasks, reports):
         if member["stage"] == "region":
             keys(report, {"assessment", "findings", "requests", "coverage"})
             details["region_coverage"].append(regions.coverage(report["coverage"], context["region"], member, files))
@@ -257,21 +258,31 @@ def _remaining(config, committee, records, prior, member):
     return seconds, requests
 
 
-def run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None, files=None, plan=None, capture=None):
+def run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None, files=None, plan=None, capture=None, deadline=None, validator=None, serial=False):
+    if committee["protocol"] != "single-v1" and not serial:
+        from .scheduler import run as concurrent_run
+        return concurrent_run(committee, config, manifest, refs, previous_runs, final, material, prior,
+                              providers=providers, files=files, plan=plan, capture=capture, deadline=deadline,
+                              validator=validator)
     records, simulated = [], providers is not None
     details = {}
     registry = {m["id"]: m for m in committee["members"]}
     if providers is not None and (type(providers) is not dict or providers.keys() != registry.keys()):
         raise VerifierError("committee_provider_members")
+    interrupted = last_interruption = None
     started = time.monotonic()
     phase_seconds = min(MAX_REVIEW_SECONDS, config["limits"]["total_review_seconds"] - prior.get("elapsed_seconds", 0))
+    if deadline is not None:
+        phase_seconds = min(phase_seconds, max(0, deadline - started))
     def call(member, schema, context):
-        nonlocal simulated
+        nonlocal simulated, interrupted, last_interruption
         messages = material(member, schema, context)
         seconds, requests = _remaining(config, committee, records, prior, member)
         seconds = min(seconds, phase_seconds - (time.monotonic() - started))
         if seconds <= 0:
+            interrupted = _interruption(member, messages, schema, requests, dispatched=False)
             raise InfrastructureError("committee_review_budget_exhausted")
+        interrupted = _interruption(member, messages, schema, requests)
         provider = OpenAI(member["provider"]) if providers is None else providers[member["id"]]
         simulated |= type(provider) is not OpenAI or provider.simulation
         from .diagnostics import review_call
@@ -283,17 +294,29 @@ def run(committee, config, manifest, refs, previous_runs, final, material, prior
         if member["stage"] == "region":
             record["region_id"] = context["region"]["id"]
         records.append(record)
+        last_interruption = interrupted
+        interrupted = None
         return report
     try:
         decision = _protocol(committee, config, manifest, refs, previous_runs, final, call, files=files, plan=plan, details=details)
-    except InfrastructureError:
-        raise
+        if validator is not None:
+            validator({"decision": decision})
     except VerifierError as exc:
         from .diagnostics import error_code
-        raise InfrastructureError("committee_invalid_review_" + error_code(exc)) from None
+        code = error_code(exc) if isinstance(exc, InfrastructureError) else "committee_invalid_review_" + error_code(exc)
+        failure = InfrastructureError(code)
+        if deadline is not None:
+            failure.review_state = _failed_state(committee, records, interrupted, started, phase_seconds, code)
+        raise failure from None
     elapsed = max(time.monotonic() - started, _spent(records)["elapsed_seconds"])
     if elapsed > phase_seconds:
-        raise InfrastructureError("committee_review_budget_exhausted")
+        failure = InfrastructureError("committee_review_budget_exhausted")
+        if deadline is not None:
+            # A late terminal response is failed-call evidence, not a completed
+            # judgment that can be relabeled arbitrarily during replay.
+            records.pop()
+            failure.review_state = _failed_state(committee, records, last_interruption, started, phase_seconds, failure.args[0])
+        raise failure
     value = {"decision": decision, "reviews": records, **details, "provenance": {
         "protocol": committee["protocol"], "committee_sha256": digest(committee),
         "attempts": _spent(records)["attempts"], "elapsed_seconds": elapsed,
@@ -302,6 +325,10 @@ def run(committee, config, manifest, refs, previous_runs, final, material, prior
 
 
 def verify(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None):
+    if "execution" in value:
+        from .scheduler import verify as concurrent_verify
+        return concurrent_verify(value, committee, config, manifest, refs, previous_runs, final,
+                                 material, prior, simulation, files=files, plan=plan)
     extra = {"region_plan", "region_coverage"} if committee["protocol"] == regions.PROTOCOL else set()
     keys(value, {"decision", "reviews", "provenance"} | extra)
     maximum = len(committee["members"]) + committee.get("max_regions", 1) - 1
@@ -334,4 +361,106 @@ def verify(value, committee, config, manifest, refs, previous_runs, final, mater
         raise VerifierError("committee_budget_binding")
     number(value["provenance"]["elapsed_seconds"], _spent(consumed)["elapsed_seconds"],
            min(MAX_REVIEW_SECONDS, config["limits"]["total_review_seconds"] - prior.get("elapsed_seconds", 0)))
+    return value
+
+
+def _interruption(member, messages, schema, requests, *, dispatched=True):
+    # A failed call has no trusted success provenance. Reserve its full allowed
+    # attempt count, including attempts that the provider may never have sent.
+    return {"member_id": member["id"], "stage": member["stage"],
+            "prompt_sha256": digest(messages), "schema_sha256": digest(schema),
+            "provider_config_sha256": digest(member["provider"]),
+            "dispatched": dispatched,
+            "attempts": min(requests, member["provider"]["max_attempts"]) if dispatched else 0}
+
+
+def _failure_budget(committee, records, interrupted):
+    attempts = interrupted["attempts"] if interrupted else 0
+    member = next((m for m in committee["members"] if interrupted and m["id"] == interrupted["member_id"]), None)
+    return {"protocol": committee["protocol"], "committee_sha256": digest(committee),
+            "attempts": _spent(records)["attempts"] + attempts,
+            "allotted_completion_tokens": _tokens(records, committee) +
+                (attempts * member["provider"]["max_completion_tokens"] if member else 0)}
+
+
+def _failed_state(committee, records, interrupted, started, limit, code):
+    elapsed = max(time.monotonic() - started, _spent(records)["elapsed_seconds"])
+    limit = max(0, limit)
+    return {"error": code, "reviews": records, "interrupted": interrupted,
+            "wall_elapsed_seconds": elapsed, "time_limit_seconds": limit,
+            "provenance": {**_failure_budget(committee, records, interrupted),
+                           "elapsed_seconds": min(elapsed, limit)}}
+
+
+def verify_failure(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None, validator=None):
+    """Replay completed work up to a bound interruption; never return a decision."""
+    if "execution" in value:
+        from .scheduler import verify as concurrent_verify
+        return concurrent_verify(value, committee, config, manifest, refs, previous_runs, final,
+                                 material, prior, simulation, files=files, plan=plan, validator=validator,
+                                 failed=True)
+    from .diagnostics import error_code
+    keys(value, {"error", "reviews", "interrupted", "provenance", "wall_elapsed_seconds", "time_limit_seconds"})
+    text(value["error"], 128)
+    maximum = min(MAX_REVIEW_SECONDS, config["limits"]["total_review_seconds"] - prior.get("elapsed_seconds", 0))
+    number(value["time_limit_seconds"], 0, max(0, maximum))
+    number(value["wall_elapsed_seconds"], 0, 10**9)
+    expired = value["wall_elapsed_seconds"] >= value["time_limit_seconds"]
+    if type(value["reviews"]) is not list or len(value["reviews"]) > len(committee["members"]) + committee.get("max_regions", 1) - 1:
+        raise VerifierError("committee_review_count")
+    consumed, interrupted, details = [], None, {}
+    class Interrupted(Exception):
+        pass
+    class BindingError(Exception):
+        pass
+    def call(member, schema, context):
+        nonlocal interrupted
+        messages = material(member, schema, context)
+        seconds, requests = _remaining(config, committee, consumed, prior, member)
+        # Replay-record failures are never semantic failures, even if a forged
+        # artifact changes its saved error code to match the validation error.
+        try:
+            if len(consumed) == len(value["reviews"]):
+                saved = value["interrupted"]
+                dispatched = saved.get("dispatched") if type(saved) is dict else None
+                if type(dispatched) is not bool or (not dispatched and
+                        (not expired or value["error"] != "committee_review_budget_exhausted")):
+                    raise VerifierError("failure_interruption_binding")
+                interrupted = _interruption(member, messages, schema, requests, dispatched=dispatched)
+                if canonical(interrupted) != canonical(saved):
+                    raise VerifierError("failure_interruption_binding")
+                raise Interrupted()
+            record = value["reviews"][len(consumed)]
+            keys(record, {"member_id", "stage", "report", "provenance"} | ({"region_id"} if member["stage"] == "region" else set()))
+            if record["member_id"] != member["id"] or record["stage"] != member["stage"]:
+                raise VerifierError("committee_stage_binding")
+            if member["stage"] == "region" and record["region_id"] != context["region"]["id"]:
+                raise VerifierError("region_record_binding")
+            _provenance(record["provenance"], member, messages, schema, simulation, seconds, requests)
+        except VerifierError as exc:
+            raise BindingError() from exc
+        consumed.append(record)
+        return record["report"]
+    try:
+        decision = _protocol(committee, config, manifest, refs, previous_runs, final, call, files=files, plan=plan, details=details)
+        if validator is not None:
+            validator({"decision": decision})
+    except Interrupted:
+        pass
+    except BindingError:
+        raise VerifierError("failure_replay_binding") from None
+    except VerifierError as exc:
+        code = error_code(exc) if isinstance(exc, InfrastructureError) else "committee_invalid_review_" + error_code(exc)
+        if value["interrupted"] is not None or code != value["error"]:
+            raise VerifierError("failure_replay_binding") from None
+    else:
+        raise VerifierError("failure_contains_completed_review")
+    if len(consumed) != len(value["reviews"]):
+        raise VerifierError("failure_review_binding")
+    expected = _failure_budget(committee, consumed, interrupted)
+    expected["elapsed_seconds"] = min(value["wall_elapsed_seconds"], value["time_limit_seconds"])
+    if canonical(value["provenance"]) != canonical(expected):
+        raise VerifierError("failure_budget_binding")
+    number(value["wall_elapsed_seconds"], _spent(consumed)["elapsed_seconds"], 10**9)
+    number(value["time_limit_seconds"], _spent(consumed)["elapsed_seconds"], max(0, maximum))
     return value

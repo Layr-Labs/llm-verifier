@@ -1,0 +1,134 @@
+{
+  "initial_results": [],
+  "initial_reviews": {
+    "primary": {
+      "reviewer": {
+        "kind": "judgment",
+        "judgment": {
+          "valid": true,
+          "scores": null,
+          "reason": "The explicitly scoped lemma follows by expanding a nonnegative square.",
+          "evidence_refs": [
+            "source:proof.md"
+          ],
+          "review_standard": "scoped-mathematical-review-v1"
+        },
+        "requests": []
+      }
+    },
+    "escalation": {
+      "planner": {
+        "regions": [
+          {
+            "id": "r1",
+            "path": "proof.md",
+            "start_line": 1,
+            "end_line": 1,
+            "purpose": "Review the assigned source text in the context of the original claim."
+          },
+          {
+            "id": "r2",
+            "path": "proof.md",
+            "start_line": 2,
+            "end_line": 2,
+            "purpose": "Review the assigned source text in the context of the original claim."
+          },
+          {
+            "id": "r3",
+            "path": "submission.json",
+            "start_line": 1,
+            "end_line": 8,
+            "purpose": "Review the assigned source text in the context of the original claim."
+          }
+        ]
+      },
+      "proof": {
+        "assessment": "The original scoped lemma is supported.",
+        "findings": [],
+        "requests": []
+      },
+      "region": [
+        {
+          "assessment": "The original scoped lemma is supported.",
+          "findings": [
+            {
+              "id": "gap",
+              "kind": "blocking",
+              "reason": "Check that the claimed domain includes the boundary case.",
+              "evidence_refs": [
+                "source:proof.md"
+              ]
+            }
+          ],
+          "requests": [],
+          "coverage": {
+            "region_id": "r1",
+            "start_line": 1,
+            "end_line": 1,
+            "complete": true
+          }
+        },
+        {
+          "assessment": "The original scoped lemma is supported.",
+          "findings": [],
+          "requests": [],
+          "coverage": {
+            "region_id": "r2",
+            "start_line": 2,
+            "end_line": 2,
+            "complete": true
+          }
+        },
+        {
+          "assessment": "The original scoped lemma is supported.",
+          "findings": [],
+          "requests": [],
+          "coverage": {
+            "region_id": "r3",
+            "start_line": 1,
+            "end_line": 8,
+            "complete": true
+          }
+        }
+      ],
+      "defender": {
+        "responses": [
+          {
+            "finding_id": "region/r1/gap",
+            "reason": "The unchanged proof uses a nonnegative square over all real inputs, including the boundary.",
+            "evidence_refs": [
+              "source:proof.md"
+            ]
+          }
+        ]
+      },
+      "adjudicator": {
+        "decision": {
+          "kind": "judgment",
+          "judgment": {
+            "valid": true,
+            "scores": null,
+            "reason": "The explicitly scoped lemma follows by expanding a nonnegative square.",
+            "evidence_refs": [
+              "source:proof.md"
+            ],
+            "review_standard": "scoped-mathematical-review-v1"
+          },
+          "requests": []
+        },
+        "resolutions": [
+          {
+            "finding_id": "region/r1/gap",
+            "reason": "The unchanged proof uses a nonnegative square over all real inputs, including the boundary.",
+            "evidence_refs": [
+              "source:proof.md"
+            ],
+            "outcome": "dismissed"
+          }
+        ]
+      }
+    }
+  },
+  "followup_results": [],
+  "final_reviews": null
+}

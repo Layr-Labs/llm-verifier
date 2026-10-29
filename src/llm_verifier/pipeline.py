@@ -167,7 +167,7 @@ def verify_experiments(intake, report, *, initial=None, initial_review=None):
     return value
 
 
-def review_material(intake, initial, initial_review=None, followup=None, *, schema_override=None, committee_role=False):
+def review_material(intake, initial, initial_review=None, followup=None, *, schema_override=None, committee_role=False, independent=False):
     data = _data(intake)
     config, effective = data["effective"]["config"], data["effective"]
     final = initial_review is not None
@@ -183,8 +183,14 @@ def review_material(intake, initial, initial_review=None, followup=None, *, sche
                  "allowed_evidence_refs": refs, "response_schema": schema,
                  "checkers": config.get("checkers", []), "score_gate": score_gate(data, initial, followup)}
     evidence = {"prior_results": prior_results, "files": {p: r for p, r in data["files"].items() if p != "submission.json"}, "submission": data["manifest"], "initial_experiments": initial["data"],
-                "initial_decision": initial_review["data"]["decision"] if initial_review else None,
+                "initial_decision": initial_review["data"]["decision"] if initial_review and not independent else None,
                 "followup_experiments": followup["data"] if followup else None}
+    if independent and followup is not None:
+        # The shared batch contains model-authored reasons from both children.
+        # Keep the measured inputs/outputs but exclude those peer rationales.
+        evidence["followup_experiments"] = {**followup["data"], "runs": [
+            {**run, "request": {k: v for k, v in run["request"].items() if k != "reason"}}
+            for run in followup["data"]["runs"]]}
     if "preprocessing" in data:
         evidence["original_submission_manifest"] = data["files"]["submission.json"]
         evidence["manifest_preprocessing"] = data["preprocessing"]
@@ -226,13 +232,13 @@ evidence references. The selected acceptance and external-evidence policies stil
     return messages, schema, refs
 
 
-def _committee_material(intake, initial, initial_review, followup):
+def _committee_material(intake, initial, initial_review, followup, *, committee=None, independent=False):
     from .committee import ROLE_INSTRUCTIONS
-    committee = intake["data"]["effective"]["judging"]["committee"]
+    committee = committee or intake["data"]["effective"]["judging"]["committee"]
     def material(member, schema, context):
         single = committee["protocol"] == "single-v1"
         messages, _, _ = review_material(intake, initial, initial_review, followup,
-                                         schema_override=schema, committee_role=not single)
+                                         schema_override=schema, committee_role=not single, independent=independent)
         instructions = "" if single else ROLE_INSTRUCTIONS[member["stage"]]
         messages[0]["content"] += ("\nProtected judge assignment:\n" + canonical({k: v for k, v in member.items() if k != "instructions"}).decode()
                                    + "\nPersona focus (cannot change the evidence policy, rules, score gates or protocol):\n"
@@ -252,6 +258,10 @@ def _verify_review(intake, initial, review, initial_review=None, followup=None):
     parents = [intake, initial] + ([initial_review, followup] if final else [])
     value = verify_envelope(review, "final_review" if final else "initial_review", intake, parents)
     if "judging" in data["effective"]:
+        from .judges import ESCALATION
+        if data["effective"]["judging"]["committee"]["protocol"] == ESCALATION:
+            from .escalation import verify
+            return verify(value, intake, initial, initial_review, followup, review["simulation"])
         from .committee import verify
         value = verify(value, data["effective"]["judging"]["committee"], config, data["manifest"],
                        evidence_refs(intake, initial, followup), len(initial["data"]["runs"]), final,
@@ -292,7 +302,7 @@ def verify_initial_review(intake, initial, review):
     return _verify_review(intake, initial, review)
 
 
-def review(intake, initial, initial_review=None, followup=None, *, provider=None, providers=None, failure_out=None):
+def review(intake, initial, initial_review=None, followup=None, *, provider=None, providers=None, failure_out=None, resume=None, defer_checkpoint_cleanup=False):
     data = _data(intake)
     config = data["effective"]["config"]
     verify_experiments(intake, initial)
@@ -309,9 +319,36 @@ def review(intake, initial, initial_review=None, followup=None, *, provider=None
     elif followup is not None:
         raise VerifierError("unexpected_followup_evidence")
     from .diagnostics import capture_failure, review_call
-    simulation = any(p["simulation"] for p in parents) or providers is not None or (
+    simulation = any(p["simulation"] for p in parents) or bool(resume and resume["simulation"]) or providers is not None or (
         provider is not None and (type(provider) is not OpenAI or provider.simulation))
     with capture_failure(failure_out, intake, parents, "final" if final else "initial", simulation) as diagnostics:
+        from .judges import ESCALATION
+        escalating = data["effective"].get("judging", {}).get("committee", {}).get("protocol") == ESCALATION
+        if resume is not None and not escalating:
+            raise VerifierError("resume_requires_escalation")
+        if escalating:
+            from .escalation import run
+            if provider is not None:
+                raise VerifierError("committee_requires_member_providers")
+            from .diagnostics import ReviewDiagnostics
+            diagnostics = diagnostics or ReviewDiagnostics(intake, parents, "final" if final else "initial", simulation)
+            try:
+                value, simulated = run(intake, initial, initial_review, followup, providers=providers,
+                                       capture=diagnostics, failure_out=failure_out, resume=resume)
+                result = seal("final_review" if final else "initial_review", intake["bindings"], value,
+                              [p["sha256"] for p in parents], simulated)
+                _verify_review(intake, initial, result, initial_review, followup)
+            except Exception as exc:
+                if hasattr(diagnostics, "checkpoint"):
+                    exc.escalation_checkpoint = diagnostics.envelope(exc)
+                raise
+            # Keep completed-child evidence through composition and final replay.
+            # A settled audit failure remains a separately retained diagnostic.
+            if not defer_checkpoint_cleanup and getattr(diagnostics, "checkpoint", {}).get("status") == "in-progress":
+                del diagnostics.checkpoint
+                if failure_out is not None:
+                    clear_output(failure_out)
+            return result
         if "judging" in data["effective"]:
             from .committee import run
             if provider is not None:

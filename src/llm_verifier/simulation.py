@@ -5,6 +5,7 @@ from .errors import VerifierError
 from .files import read_json, write_json
 from .jsonutil import canonical, digest, keys
 from .pipeline import dossier, execute, review
+from .judges import ESCALATION
 from .runner import output_record
 
 
@@ -56,14 +57,35 @@ def simulate(effective, candidate, script, output, *, accepted_results_context=N
                           provider=ScriptedProvider(effective["config"]["provider"], supplied))
         if type(supplied) is not dict:
             raise VerifierError("simulation_member_reports")
-        providers = {m["id"]: ScriptedProvider(m["provider"], supplied.get(m["id"]), sequence=m["stage"] == "region") for m in committee["members"]}
-        result = review(intake, initial, first, followup, providers=providers)
-        if supplied.keys() != {r["member_id"] for r in result["data"]["reviews"]}:
-            raise VerifierError("simulation_unexpected_member_reports")
-        for member in committee["members"]:
-            if member["stage"] == "region" and len(supplied[member["id"]]) != sum(
-                    r["member_id"] == member["id"] for r in result["data"]["reviews"]):
-                raise VerifierError("simulation_unexpected_region_reports")
+        def make_providers(child, reports):
+            if type(reports) is not dict:
+                raise VerifierError("simulation_member_reports")
+            return {m["id"]: ScriptedProvider(m["provider"], reports.get(m["id"], [] if m["stage"] == "region" else None),
+                                               sequence=m["stage"] == "region") for m in child["members"]}
+        def validate_reports(child, reports, value):
+            if reports.keys() != {r["member_id"] for r in value["reviews"]}:
+                raise VerifierError("simulation_unexpected_member_reports")
+            for member in child["members"]:
+                if member["stage"] == "region" and len(reports.get(member["id"], [])) != sum(
+                        r["member_id"] == member["id"] for r in value["reviews"]):
+                    raise VerifierError("simulation_unexpected_region_reports")
+        if committee["protocol"] == ESCALATION:
+            if supplied.keys() - {"primary", "escalation"}:
+                raise VerifierError("simulation_unexpected_child_reports")
+            providers = {name: make_providers(committee[name], supplied.get(name, {}))
+                         for name in ("primary", "escalation")}
+            result = review(intake, initial, first, followup, providers=providers)
+            for name in ("primary", "escalation"):
+                entry = result["data"][name]
+                if entry is not None and not entry["carried"]:
+                    if entry["status"] != "completed":
+                        raise VerifierError("simulation_invalid_escalation_reports")
+                    validate_reports(committee[name], supplied.get(name, {}), entry["review"])
+                elif name in supplied:
+                    raise VerifierError("simulation_unexpected_child_reports")
+        else:
+            result = review(intake, initial, first, followup, providers=make_providers(committee, supplied))
+            validate_reports(committee, supplied, result["data"])
         return result
     intake = intake_snapshot(effective, candidate, simulation=True, accepted_results_context=accepted_results_context)
     initial = execute(intake, runner=ScriptedRunner(script["initial_results"]))

@@ -19,7 +19,7 @@ from llm_verifier.provider import HttpResponse, HttpTransport
 from llm_verifier.runner import DockerRunner, output_record
 from llm_verifier.scaffold import check
 from llm_verifier.simulation import simulate
-from tests.support import completion, example, reseal, scripted_model
+from tests.support import completion, example, reseal, scripted_model, request_parts
 
 PROFILE = {"profile": "builtin:math-committee-v1"}
 
@@ -358,9 +358,14 @@ class CommitteeProtocol(unittest.TestCase):
         for limits in ({"total_provider_requests": 6}, {"total_review_tokens": 6 * 8192}):
             with self.subTest(limits=limits), committee(limits=limits) as (root, _, intake):
                 initial = pipeline.execute(intake)
-                replies = iter([HttpResponse(503, b""), completion(report(findings=[finding()]))]
-                               + [completion(report())] * 3 + [completion({"responses": [response()]})])
-                with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=lambda *args: next(replies)) as calls, patch("llm_verifier.provider.time.sleep"), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
+                attempts = []
+                def transport(body, *args):
+                    _, member, _ = request_parts(body)
+                    if member['id'] == 'proof':
+                        attempts.append(1)
+                        return HttpResponse(503, b'') if len(attempts) == 1 else completion(report(findings=[finding()]))
+                    return completion({'responses': [response()]} if member['stage'] == 'defense' else report())
+                with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=transport) as calls, patch("llm_verifier.provider.time.sleep"), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
                     pipeline.review(intake, initial)
                 self.assertEqual(calls.call_count, 6)
 
@@ -392,7 +397,7 @@ class CommitteeProtocol(unittest.TestCase):
             initial = pipeline.execute(intake)
             providers = {m["id"]: ScriptedProvider(m["provider"], report())
                          for m in effective["judging"]["committee"]["members"]}
-            with patch("llm_verifier.committee.time.monotonic", side_effect=[0, 1, 3]), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
+            with patch("llm_verifier.committee.time.monotonic", side_effect=__import__("itertools").chain([0, 1], __import__("itertools").repeat(3))), self.assertRaisesRegex(InfrastructureError, "committee_review_budget_exhausted"):
                 pipeline.review(intake, initial, providers=providers)
 
     def test_prior_results_and_unavailable_support_keep_atomic_lineage(self):
@@ -476,8 +481,13 @@ class CommitteeProtocol(unittest.TestCase):
                                     {**defense, "outcome": "dismissed"}]}])
                 bodies = []
                 def request(body, *args):
-                    bodies.append(json.loads(body))
-                    return completion(next(replies))
+                    request, member, _ = request_parts(body)
+                    bodies.append(request)
+                    value = ({'responses': [defense]} if member['stage'] == 'defense' else
+                             {'decision': decision, 'resolutions': [{**defense, 'outcome': 'dismissed'}]}
+                             if member['stage'] == 'adjudication' else
+                             report(findings=[finding()] if member['id'] == 'lane_cryptanalysis' else []))
+                    return completion(value)
                 initial = pipeline.execute(intake)
                 with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=request):
                     first = pipeline.review(intake, initial)

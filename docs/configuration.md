@@ -323,3 +323,7 @@ left at its default. An explicit `--submission` must also remain in that directo
 The selector is protected from candidate placement and score output. `preflight`,
 `intake`, `simulate` and hosted preparation resolve it identically; unsafe,
 symlinked and cross-track selections fail before snapshotting candidate files.
+
+Opt-in [probabilistic escalation](judges.md#probabilistic-escalation-opt-in) always
+runs a primary judge and independently samples an additional review, with
+configurable frequency, record-only/override authority and a shared budget.

@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "title": "Nonnegative-square lemma",
+  "claims": [
+    "For all real a,b, 2ab <= a^2+b^2. This is a standalone lemma, not the full dimension-100 target."
+  ],
+  "experiments": []
+}

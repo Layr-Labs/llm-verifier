@@ -22,6 +22,7 @@ Required fields:
 | `policies` | Default `scoring` and `validity` JSON selectors |
 | `supported_policies` | For each field, list of `{selector, instructions}` records |
 | `provider` | Explicit `model`; optional settings below |
+| `judging` | Optional protected profile, inline committee or JSON-file selection; see [judges](judges.md) |
 | `limits` | Optional organizer reductions/overrides within hard caps |
 | `runtime` | Optional `{image, platform}`; official Python digest, linux/amd64 |
 | `checkers` | Optional protected registry; see [checks and numeric score gate](checkers.md) |
@@ -62,7 +63,11 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Total reserved output bytes | 393,216 | 4,194,304 |
 | Memory MiB / CPUs / processes / tmpfs MiB | 256 / 1 / 32 / 16 | 1024 / 4 / 128 / 64 |
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
-| Total review seconds / generation attempts across both reviews | 180 / 4 | 2400 / 6 |
+| Total review seconds / generation attempts across both reviews | 180 / 4 without `judging`; 1800 / 24 with `judging` | 2400 / 64 |
+
+With `judging`, the shared reserved completion-token budget defaults to 262,144
+and has a hard maximum of 2,097,152. Initial capacity must cover every member,
+including conditional defense; see [committee budgets](judges.md#budgets-and-immutable-provenance).
 
 Candidate experiments and organizer checks share all run/time/output budgets.
 The registry source union independently uses the same file/count/byte caps as the
@@ -286,6 +291,15 @@ The submission may declare `prior_results` as up to 16 exact
 uses the trusted platform context at intake. There is no `prior_imports` config,
 candidate URL/file import, owner allowlist or reference-specific credential.
 Editable source checks validate selectors without resolving them.
+
+## Judge committees
+
+Optional `judging` resolves bundled or local personas into a bounded review
+protocol. Model settings inherit from `provider`; experiment and inference budgets
+are shared. See [judge configuration](judges.md) for JSON examples, default limits,
+protected snapshots and per-member provenance. `builtin:math-decomposed-v1` adds
+a frozen source-region plan and per-region coverage under the same shared budgets.
+Omission retains single review.
 
 ## CurveSmash policy, protected rules and selection
 

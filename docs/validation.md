@@ -111,3 +111,70 @@ errors, hard poll/time bounds, cancellation/cleanup, safe response IDs,
 refusal/tool/truncation rejection, usage normalization and exact mode-specific
 endpoint provenance. Existing killable-worker and credential-placement
 regressions remain green. Hosted background execution awaits explicit approval.
+
+## Challenge-owned judge committees (2026-10-22)
+
+Implemented locally from master `6bdefc130ec7215697eccf4339853343f9282920`.
+A fresh 0.7.0 wheel installation passed all **257 tests**, with zero skips,
+including 24 committee tests and the five existing real Docker checks. Model
+credentials and `PYTHONPATH` were removed for the installed suite; no image pull
+was required. All 44 installed runtime/resource files match the source and wheel.
+
+Committee coverage includes protected local catalogs and immutable prompt snapshots,
+profile composition and model overrides, independent reviewer inputs, exact
+blocking-finding defense/resolution coverage, rejected unresolved acceptance,
+forged/reordered/missing stages, shared request/token/retry/wall budgets, the single
+follow-up batch, simulation publication restrictions, exact score/check gates,
+prior-result lineage and unavailable support, and protected workflow output paths.
+The legacy normalized-configuration digest regression remains unchanged and passes.
+
+Independent JSON Schema validation passed six reference schemas, seven example
+configs, bundled/local catalogs and selection, and 14 generated strict stage
+schemas with scripted reports. All three hosted workflows and both generated
+callers pass actionlint. Installed CLI discovery, check and committee simulation
+pass; `pip check` and `git diff --check` pass.
+
+This establishes local implementation and mechanical validation. No live model
+call, hosted committee evaluation, publication or deployment is part of this run.
+
+## HashSmash preset publication validation (2026-10-22)
+
+The final 0.7.0 package adds `builtin:hashsmash-v1`, retaining HashSmash's six
+role IDs and adapting its review priorities to the shared verifier protocol.
+Three new reusable personas cover evaluability, cryptanalysis and adversarial
+experiment assessment. The catalog contains ten personas and three profiles.
+The guide documents inherited model settings, per-role overrides and the limits
+of the role mapping; HashSmash-specific paired lane policy is not imported.
+
+The fresh installed suite passes **259 tests, zero skips**, including 26 committee
+tests and five real Docker checks. The two added cases cover the exact six-role
+mapping, inherited/overridden provider settings, immutable intake, and a full
+blocking-finding defense/adjudication through final dossier validation. The
+installed catalog, protected configuration check and offline HashSmash simulation
+also pass. All 47 installed runtime/resource files match the final source and wheel.
+Six reference schemas, all three bundled profiles, their 26 generated stage schemas
+and the documented selectors validate; all three production workflows pass actionlint.
+
+Calibration remains deferred. No live model request or challenge rollout is part
+of this publication validation.
+
+## Committee integration with current master (2026-10-23)
+
+PR #18 was reconciled with master `8c1f098875fae0750c29ecfd641f7c9fc53a0f41`,
+retaining CurveSmash preprocessing, explicit exploratory policy, protected extra
+rules, candidate selection, early preflight and packaged solver guidance.
+Preflight now checks every resolved committee member's schema settings, including
+reviewer response-format overrides. Exploratory committee prompts retain the
+selected standard without the single-reviewer-only description.
+
+A fresh installed 0.7.0 wheel passed **296 tests, zero skips**, including 28
+committee tests and five real Docker checks. Combined regressions cover member
+format validation before inference, both policies through all six HashSmash
+roles, original manifest/preprocessing audit retention, protected rule delivery,
+exact scored export and score-output protection for judge/rule/selector files.
+Six reference schemas, seven example configs, all three profiles under both
+policies and 52 generated role schemas validate. Production workflows pass
+lint; package resources and installed solver documentation match source.
+
+These are offline mechanical tests; no live inference or challenge rollout was
+performed to resolve the conflicts.

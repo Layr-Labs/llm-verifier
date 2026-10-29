@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "personas": [
+    {
+      "id": "local:scope-auditor-v1",
+      "instructions_path": "judges/scope.md"
+    }
+  ],
+  "profiles": []
+}

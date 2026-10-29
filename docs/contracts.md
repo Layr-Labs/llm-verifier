@@ -62,7 +62,8 @@ generation-attempt count, elapsed time and the selected fixed OpenAI endpoint. N
 retained. `request_id` records the completion envelope ID when present, not an HTTP
 header.
 
-Local provenance records hashes of **all installed package `.py` files**, not
+Local provenance records hashes of **all installed package `.py` files and
+`judges/**` catalog/persona resources**, not
 an unrelated/bootstrap Git SHA. Local revisions are unasserted. Hosted provenance
 also records the verified challenge revision, verifier revision, root/submission/
 score paths, workflow file hash and run ID/attempt. No moving-branch lookup occurs
@@ -169,3 +170,12 @@ No later phase refetches references. Valid finalization can emit an
 accepted bundle; invalid judgments emit only the platform receipt alongside the
 normal dossier/score. Empty-reference platform intakes also emit that receipt.
 Simulation cannot emit reusable results or an official score.
+
+## Configured judge protocols
+
+With explicit `judging`, effective configuration also snapshots protected catalog
+and prompt files plus the fully resolved committee. Each review phase retains its
+existing routing `decision`, stores a `reviews` array with per-member reports and
+provider provenance, and binds an aggregate budget summary. Finalization replays
+the fixed protocol and every required stage without model calls before applying
+the existing atomic verdict and score gates. See [the complete contract](judges.md).

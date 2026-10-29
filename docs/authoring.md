@@ -20,7 +20,7 @@ llm-verifier check --root my-challenge
 remains, and name where it is: a file and line, or a field in a JSON file. Your own
 notes and participants' text may say TODO; only the starter's placeholders count. For a complete
 worked example of a scored proof, see [examples/scored-proof](../examples/scored-proof). Rules contain the
-scientific specification; configuration selects objectives, a reviewer and any
+scientific specification; configuration selects objectives, a reviewer or committee and any
 checkers. Keep the starting proof in one file. There is no external definition,
 controller receipt, copied runner, generated skill, or fixture generator.
 
@@ -31,7 +31,7 @@ experiments. It executes no code or model. Unrelated authoring
 files and caches outside `submission/` are allowed. It validates prior-result
 selector syntax locally; authenticated resolution occurs at evaluation intake,
 so ordinary editing and `check` need no platform credentials. Keep protected config, rules
-and checker files outside participant-editable paths. Repository access controls
+checker files, committee files and persona catalogs outside participant-editable paths. Repository access controls
 and the organizer's trusted checkout provide authority; this command is not a
 repository attestation or a restriction on an authoring agent's permissions.
 
@@ -251,3 +251,11 @@ or resolving references. For imported Pareto tracks, use the existing benchmark
 owner PATCH to change future candidates independently of pinned verifier config.
 Reimport preserves live admission, and retries/reorgs keep the original candidate
 policy. See [submission admission](submission-admission.md) for exact examples.
+
+## Optional judge committees
+
+Use `llm-verifier judges` to inspect bundled profiles. Add `judging` to protected
+`verifier.json` to select a preset or a committee file, and explicitly list local
+persona/profile catalogs. `check` validates and resolves the same configuration as
+intake. No generated runner or copied built-in persona is needed. See the
+[judge guide](judges.md) and [complete local-catalog example](../examples/committee).

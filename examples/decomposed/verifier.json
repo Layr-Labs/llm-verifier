@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "unscored-lemma",
+  "rules_path": "rules.md",
+  "review_standard": "scoped-mathematical-review-v1",
+  "objectives": [
+    {
+      "name": "full_result_bound",
+      "direction": "-",
+      "unit": "constant C",
+      "semantics": "The least proved C in |sum(x_i)| <= C sqrt(sum(x_i^2)) for all real vectors of dimension 100. Partial lemmas have scores=null."
+    }
+  ],
+  "allow_unscored": true,
+  "policies": {
+    "scoring": {
+      "version": "lemma-unscored-v1"
+    },
+    "validity": {
+      "version": "scoped-claims-v1"
+    }
+  },
+  "supported_policies": {
+    "scoring": [
+      {
+        "selector": {
+          "version": "lemma-unscored-v1"
+        },
+        "instructions": "This instance accepts partial lemmas only; always return scores=null. Do not infer the complete target bound."
+      }
+    ],
+    "validity": [
+      {
+        "selector": {
+          "version": "scoped-claims-v1"
+        },
+        "instructions": "Establish every declared claim exactly as written. Explain any missing premise in reason. A standalone lemma may be submitted as the entire declared set."
+      }
+    ]
+  },
+  "provider": {
+    "model": "SELECT_OPENAI_MODEL",
+    "response_format": "json_schema"
+  },
+  "limits": {
+    "max_followups": 0
+  },
+  "judging": {
+    "profile": "builtin:math-decomposed-v1"
+  }
+}

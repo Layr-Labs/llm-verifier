@@ -1,0 +1,170 @@
+{
+  "version": 1,
+  "personas": [
+    {
+      "id": "builtin:balanced-reviewer-v1",
+      "instructions_path": "personas/balanced-reviewer-v1.md"
+    },
+    {
+      "id": "builtin:proof-reviewer-v1",
+      "instructions_path": "personas/proof-reviewer-v1.md"
+    },
+    {
+      "id": "builtin:counterexample-skeptic-v1",
+      "instructions_path": "personas/counterexample-skeptic-v1.md"
+    },
+    {
+      "id": "builtin:cost-auditor-v1",
+      "instructions_path": "personas/cost-auditor-v1.md"
+    },
+    {
+      "id": "builtin:evidence-auditor-v1",
+      "instructions_path": "personas/evidence-auditor-v1.md"
+    },
+    {
+      "id": "builtin:constructive-defender-v1",
+      "instructions_path": "personas/constructive-defender-v1.md"
+    },
+    {
+      "id": "builtin:adjudicator-v1",
+      "instructions_path": "personas/adjudicator-v1.md"
+    },
+    {
+      "id": "builtin:evaluability-reviewer-v1",
+      "instructions_path": "personas/evaluability-reviewer-v1.md"
+    },
+    {
+      "id": "builtin:cryptanalysis-reviewer-v1",
+      "instructions_path": "personas/cryptanalysis-reviewer-v1.md"
+    },
+    {
+      "id": "builtin:experiment-skeptic-v1",
+      "instructions_path": "personas/experiment-skeptic-v1.md"
+    },
+    {
+      "id": "builtin:region-planner-v1",
+      "instructions_path": "personas/region-planner-v1.md"
+    },
+    {
+      "id": "builtin:region-reviewer-v1",
+      "instructions_path": "personas/region-reviewer-v1.md"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "builtin:single-v1",
+      "protocol": "single-v1",
+      "members": [
+        {
+          "id": "reviewer",
+          "persona": "builtin:balanced-reviewer-v1",
+          "stage": "review"
+        }
+      ]
+    },
+    {
+      "id": "builtin:math-committee-v1",
+      "protocol": "review-defense-adjudication-v1",
+      "members": [
+        {
+          "id": "proof",
+          "persona": "builtin:proof-reviewer-v1",
+          "stage": "review"
+        },
+        {
+          "id": "skeptic",
+          "persona": "builtin:counterexample-skeptic-v1",
+          "stage": "review"
+        },
+        {
+          "id": "cost",
+          "persona": "builtin:cost-auditor-v1",
+          "stage": "review"
+        },
+        {
+          "id": "evidence",
+          "persona": "builtin:evidence-auditor-v1",
+          "stage": "review"
+        },
+        {
+          "id": "defender",
+          "persona": "builtin:constructive-defender-v1",
+          "stage": "defense"
+        },
+        {
+          "id": "adjudicator",
+          "persona": "builtin:adjudicator-v1",
+          "stage": "adjudication"
+        }
+      ]
+    },
+    {
+      "id": "builtin:hashsmash-v1",
+      "protocol": "review-defense-adjudication-v1",
+      "members": [
+        {
+          "id": "lane_evaluability",
+          "persona": "builtin:evaluability-reviewer-v1",
+          "stage": "review"
+        },
+        {
+          "id": "lane_cryptanalysis",
+          "persona": "builtin:cryptanalysis-reviewer-v1",
+          "stage": "review"
+        },
+        {
+          "id": "lane_cost",
+          "persona": "builtin:cost-auditor-v1",
+          "stage": "review"
+        },
+        {
+          "id": "lane_experiments",
+          "persona": "builtin:experiment-skeptic-v1",
+          "stage": "review"
+        },
+        {
+          "id": "lane_defender",
+          "persona": "builtin:constructive-defender-v1",
+          "stage": "defense"
+        },
+        {
+          "id": "lane_adjudicator",
+          "persona": "builtin:adjudicator-v1",
+          "stage": "adjudication"
+        }
+      ]
+    },
+    {
+      "id": "builtin:math-decomposed-v1",
+      "protocol": "decomposed-review-v1",
+      "max_regions": 8,
+      "members": [
+        {
+          "id": "planner",
+          "persona": "builtin:region-planner-v1",
+          "stage": "planning"
+        },
+        {
+          "id": "proof",
+          "persona": "builtin:proof-reviewer-v1",
+          "stage": "review"
+        },
+        {
+          "id": "region",
+          "persona": "builtin:region-reviewer-v1",
+          "stage": "region"
+        },
+        {
+          "id": "defender",
+          "persona": "builtin:constructive-defender-v1",
+          "stage": "defense"
+        },
+        {
+          "id": "adjudicator",
+          "persona": "builtin:adjudicator-v1",
+          "stage": "adjudication"
+        }
+      ]
+    }
+  ]
+}

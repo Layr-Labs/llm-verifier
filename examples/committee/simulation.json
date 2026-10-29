@@ -1,0 +1,77 @@
+{
+  "initial_results": [],
+  "initial_reviews": {
+    "proof": {
+      "assessment": "The original proof supports the declared standalone lemma.",
+      "findings": [
+        {
+          "id": "scope",
+          "kind": "blocking",
+          "reason": "Check whether this proof claims the full dimension-100 result.",
+          "evidence_refs": [
+            "source:proof.md"
+          ]
+        }
+      ],
+      "requests": []
+    },
+    "skeptic": {
+      "assessment": "The original proof supports the declared standalone lemma.",
+      "findings": [],
+      "requests": []
+    },
+    "cost": {
+      "assessment": "The original proof supports the declared standalone lemma.",
+      "findings": [],
+      "requests": []
+    },
+    "evidence": {
+      "assessment": "The original proof supports the declared standalone lemma.",
+      "findings": [],
+      "requests": []
+    },
+    "scope": {
+      "assessment": "The original proof supports the declared standalone lemma.",
+      "findings": [],
+      "requests": []
+    },
+    "defender": {
+      "responses": [
+        {
+          "finding_id": "proof/scope",
+          "reason": "The original claim explicitly limits itself to the two-variable lemma, which the proof establishes.",
+          "evidence_refs": [
+            "source:proof.md"
+          ]
+        }
+      ]
+    },
+    "adjudicator": {
+      "decision": {
+        "kind": "judgment",
+        "judgment": {
+          "valid": true,
+          "scores": null,
+          "reason": "The explicitly scoped lemma follows by expanding a nonnegative square.",
+          "evidence_refs": [
+            "source:proof.md"
+          ],
+          "review_standard": "scoped-mathematical-review-v1"
+        },
+        "requests": []
+      },
+      "resolutions": [
+        {
+          "finding_id": "proof/scope",
+          "reason": "The original claim explicitly limits itself to the two-variable lemma, which the proof establishes.",
+          "evidence_refs": [
+            "source:proof.md"
+          ],
+          "outcome": "dismissed"
+        }
+      ]
+    }
+  },
+  "followup_results": [],
+  "final_reviews": null
+}

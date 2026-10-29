@@ -58,7 +58,12 @@ def policy_id(config):
     return config.get("acceptance_policy", POLICY_ID)
 
 
-def policy_for(config):
+def policy_for(config, *, committee=False):
     if policy_id(config) == "exploratory-v1":
-        return EXPLORATORY + CLAIM_CONTEXT + EXTERNAL_EVIDENCE_POLICY + PRIOR_INSTRUCTIONS
+        instructions = EXPLORATORY
+        if committee:
+            instructions = instructions.replace(
+                "This is one reviewer, not independent\ndefense/adjudication.",
+                "Follow the assigned role in the configured committee protocol.")
+        return instructions + CLAIM_CONTEXT + EXTERNAL_EVIDENCE_POLICY + PRIOR_INSTRUCTIONS
     return POLICY

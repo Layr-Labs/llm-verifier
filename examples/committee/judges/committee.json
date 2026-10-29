@@ -1,0 +1,13 @@
+{
+  "profile": "builtin:math-committee-v1",
+  "catalogs": [
+    "judges/personas.json"
+  ],
+  "add_members": [
+    {
+      "id": "scope",
+      "persona": "local:scope-auditor-v1",
+      "stage": "review"
+    }
+  ]
+}

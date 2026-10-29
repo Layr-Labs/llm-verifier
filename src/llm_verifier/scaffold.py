@@ -236,7 +236,7 @@ def check(root):
     refuse_unfilled(root)
     effective = load_config(root, "verifier.json", "submission")
     files = snapshot(Path(root) / "submission", effective["config"]["limits"])
-    submission, audit = preflight_manifest(files, effective["config"])
+    submission, audit = preflight_manifest(files, effective["config"], committee=effective.get("judging", {}).get("committee"))
     config = effective["config"]
     validate_objective_claims(config["objectives"], submission["claims"])
     # Strict validation at trust boundaries; unrelated authoring files are not

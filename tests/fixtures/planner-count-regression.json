@@ -1,0 +1,80 @@
+{
+  "description": "Line-count shape of the seven-file CircuitBreaker candidate from the live failure; tests reconstruct inert source, not mathematical claims.",
+  "intake_sha256": "b17857a8935d237e1d3b60a3daef206516b465dec56bd5f08125448bc8a164fc",
+  "source_line_counts": {
+    "audit.py": 167,
+    "bound.json": 36,
+    "disperser.md": 285,
+    "elimination.md": 307,
+    "family.py": 115,
+    "proof.md": 174,
+    "submission.json": 53
+  },
+  "synthetic_nine_regions": {
+    "regions": [
+      {
+        "end_line": 167,
+        "id": "synthetic-r1",
+        "path": "audit.py",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 36,
+        "id": "synthetic-r2",
+        "path": "bound.json",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 142,
+        "id": "synthetic-r3",
+        "path": "disperser.md",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 285,
+        "id": "synthetic-r4",
+        "path": "disperser.md",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 143
+      },
+      {
+        "end_line": 153,
+        "id": "synthetic-r5",
+        "path": "elimination.md",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 307,
+        "id": "synthetic-r6",
+        "path": "elimination.md",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 154
+      },
+      {
+        "end_line": 115,
+        "id": "synthetic-r7",
+        "path": "family.py",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 174,
+        "id": "synthetic-r8",
+        "path": "proof.md",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      },
+      {
+        "end_line": 53,
+        "id": "synthetic-r9",
+        "path": "submission.json",
+        "purpose": "Synthetic complete-coverage schema/runtime boundary test.",
+        "start_line": 1
+      }
+    ]
+  }
+}

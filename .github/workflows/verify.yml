@@ -27,6 +27,40 @@ on:
       yukon_evaluation:
         type: string
         default: ''
+    outputs:
+      helper_base64:
+        description: "Trusted standalone transfer helper, base64 encoded"
+        value: ${{ jobs.prepare.outputs.helper_base64 }}
+      helper_sha256:
+        description: "SHA256 of the decoded transfer helper"
+        value: ${{ jobs.prepare.outputs.helper_sha256 }}
+      package_artifact:
+        description: "Immutable package archive descriptor"
+        value: ${{ jobs.prepare.outputs.package_artifact }}
+      intake_artifact:
+        description: "Immutable intake archive descriptor"
+        value: ${{ jobs.prepare.outputs.intake_artifact }}
+      dossier_artifact:
+        description: "Immutable dossier archive descriptor"
+        value: ${{ jobs.finalize.outputs.dossier_artifact }}
+      intake_sha256:
+        description: "Intake envelope digest, not the archive or file digest"
+        value: ${{ jobs.prepare.outputs.intake_sha256 }}
+      review_run_id:
+        description: "Run that produced the selected review"
+        value: ${{ jobs.prepare.outputs.run_id }}
+      review_run_attempt:
+        description: "Attempt that produced the selected review"
+        value: ${{ jobs.initial_review.outputs.kind == 'followup' && jobs.final_review.outputs.run_attempt || jobs.initial_review.outputs.run_attempt }}
+      initial_review_run_attempt:
+        description: "Initial review producer attempt"
+        value: ${{ jobs.initial_review.outputs.run_attempt }}
+      final_review_run_attempt:
+        description: "Final review producer attempt, empty for direct judgments"
+        value: ${{ jobs.final_review.outputs.run_attempt }}
+      review_kind:
+        description: "Initial review kind: judgment or followup"
+        value: ${{ jobs.initial_review.outputs.kind }}
     secrets:
       OPENAI_API_KEY:
         required: true
@@ -46,6 +80,13 @@ jobs:
     timeout-minutes: 10
     outputs:
       intake_sha256: ${{ steps.intake.outputs.intake_sha256 }}
+      helper_base64: ${{ steps.transfer.outputs.helper_base64 }}
+      helper_sha256: ${{ steps.transfer.outputs.helper_sha256 }}
+      run_id: ${{ github.run_id }}
+      package_artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-package","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.package.outputs.artifact-id, steps.package.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+      intake_artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-intake","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.intake_archive.outputs.artifact-id, steps.intake_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
     env:
       VERIFIER_REPOSITORY: ${{ inputs.verifier_repository }}
       VERIFIER_REVISION: ${{ inputs.verifier_revision }}
@@ -100,7 +141,13 @@ jobs:
         shell: bash
         run: |
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" workflow-prepare             --checkout "$GITHUB_WORKSPACE/challenge" --verifier-checkout "$GITHUB_WORKSPACE/verifier"             --candidate-revision "$CANDIDATE_REVISION" --verifier-revision "$VERIFIER_REVISION"             --root-dir "$ROOT_DIR" --config "$CONFIG_PATH" --submission "$SUBMISSION_PATH"             --score-path "$SCORE_PATH" --run-id "$EVALUATION_RUN" --out "$RUNNER_TEMP/intake/intake.json"
+      - name: Export trusted standalone artifact transfer helper
+        id: transfer
+        shell: bash
+        run: |
+          python3 -I "$GITHUB_WORKSPACE/verifier/scripts/artifact_transfer.py" emit-bootstrap
       - name: Upload trusted package for credential-free execution jobs
+        id: package
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-package
@@ -108,6 +155,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Upload trusted intake
+        id: intake_archive
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-intake
@@ -120,17 +168,43 @@ jobs:
     needs: [prepare]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-initial-experiments","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.phase_archive.outputs.artifact-id, steps.phase_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+      run_attempt: ${{ github.run_attempt }}
     env:
       LLMV_EXPECTED_INTAKE: ${{ needs.prepare.outputs.intake_sha256 }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-package
-          path: ${{ runner.temp }}/wheel/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-intake
-          path: ${{ runner.temp }}/intake/
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify immutable phase artifacts
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [
+              {"artifact":${{ needs.prepare.outputs.package_artifact }},"path":"wheel"},
+              {"artifact":${{ needs.prepare.outputs.intake_artifact }},"path":"intake"}
+            ]
       - name: Setup verifier without package-network access
         shell: bash
         run: |
@@ -142,7 +216,8 @@ jobs:
       - name: Benchmark initial immutable entrypoints
         run: |
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" experiments --intake "$RUNNER_TEMP/intake/intake.json" --out "$RUNNER_TEMP/initial/initial.json"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - id: phase_archive
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-initial-experiments
           path: ${{ runner.temp }}/initial/
@@ -155,22 +230,44 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
+      artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-initial-review","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.phase_archive.outputs.artifact-id, steps.phase_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+      run_attempt: ${{ github.run_attempt }}
       kind: ${{ steps.review.outputs.kind }}
     env:
       LLMV_EXPECTED_INTAKE: ${{ needs.prepare.outputs.intake_sha256 }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-package
-          path: ${{ runner.temp }}/wheel/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-intake
-          path: ${{ runner.temp }}/intake/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-experiments
-          path: ${{ runner.temp }}/initial/
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify immutable phase artifacts
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [
+              {"artifact":${{ needs.prepare.outputs.package_artifact }},"path":"wheel"},
+              {"artifact":${{ needs.prepare.outputs.intake_artifact }},"path":"intake"},
+              {"artifact":${{ needs.experiments.outputs.artifact }},"path":"initial"}
+            ]
       - name: Setup verifier without package-network access
         shell: bash
         run: |
@@ -181,12 +278,22 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-initial --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --out "$RUNNER_TEMP/review/review.json"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-initial --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --out "$RUNNER_TEMP/review/review.json" --failure-out "$RUNNER_TEMP/review-failure/failure.json"
+      - id: phase_archive
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-initial-review
           path: ${{ runner.temp }}/review/
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain initial review failure diagnostics
+        if: ${{ always() && steps.review.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: llmv-initial-review-failure
+          path: ${{ runner.temp }}/review-failure/failure.json
+          if-no-files-found: ignore
           retention-days: 7
 
   followup:
@@ -195,25 +302,45 @@ jobs:
     if: needs.initial_review.outputs.kind == 'followup'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-followup","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.phase_archive.outputs.artifact-id, steps.phase_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+      run_attempt: ${{ github.run_attempt }}
     env:
       LLMV_EXPECTED_INTAKE: ${{ needs.prepare.outputs.intake_sha256 }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-package
-          path: ${{ runner.temp }}/wheel/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-intake
-          path: ${{ runner.temp }}/intake/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-experiments
-          path: ${{ runner.temp }}/initial/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-review
-          path: ${{ runner.temp }}/review/
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify immutable phase artifacts
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [
+              {"artifact":${{ needs.prepare.outputs.package_artifact }},"path":"wheel"},
+              {"artifact":${{ needs.prepare.outputs.intake_artifact }},"path":"intake"},
+              {"artifact":${{ needs.experiments.outputs.artifact }},"path":"initial"},
+              {"artifact":${{ needs.initial_review.outputs.artifact }},"path":"review"}
+            ]
       - name: Setup verifier without package-network access
         shell: bash
         run: |
@@ -225,7 +352,8 @@ jobs:
       - name: Benchmark immutable requested entrypoints
         run: |
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" followup --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" --out "$RUNNER_TEMP/followup/followup.json"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+      - id: phase_archive
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-followup
           path: ${{ runner.temp }}/followup/
@@ -238,44 +366,72 @@ jobs:
     if: needs.initial_review.outputs.kind == 'followup'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      artifact: >-
+        ${{ format('{{"id":"{0}","name":"llmv-final-review","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.phase_archive.outputs.artifact-id, steps.phase_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
+      run_attempt: ${{ github.run_attempt }}
     env:
       LLMV_EXPECTED_INTAKE: ${{ needs.prepare.outputs.intake_sha256 }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-package
-          path: ${{ runner.temp }}/wheel/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-intake
-          path: ${{ runner.temp }}/intake/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-experiments
-          path: ${{ runner.temp }}/initial/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-review
-          path: ${{ runner.temp }}/review/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-followup
-          path: ${{ runner.temp }}/followup/
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify immutable phase artifacts
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [
+              {"artifact":${{ needs.prepare.outputs.package_artifact }},"path":"wheel"},
+              {"artifact":${{ needs.prepare.outputs.intake_artifact }},"path":"intake"},
+              {"artifact":${{ needs.experiments.outputs.artifact }},"path":"initial"},
+              {"artifact":${{ needs.initial_review.outputs.artifact }},"path":"review"},
+              {"artifact":${{ needs.followup.outputs.artifact }},"path":"followup"}
+            ]
       - name: Setup verifier without package-network access
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/llmv-env"
           "$RUNNER_TEMP/llmv-env/bin/python" -m pip install --no-index --no-deps "$RUNNER_TEMP"/wheel/*.whl
       - name: Benchmark credentialed final review
+        id: review
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-final --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" --followup "$RUNNER_TEMP/followup/followup.json" --out "$RUNNER_TEMP/final-review/final-review.json"
-      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+          "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-final --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" --followup "$RUNNER_TEMP/followup/followup.json" --out "$RUNNER_TEMP/final-review/final-review.json" --failure-out "$RUNNER_TEMP/final-review-failure/failure.json"
+      - id: phase_archive
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-final-review
           path: ${{ runner.temp }}/final-review/
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain final review failure diagnostics
+        if: ${{ always() && steps.review.outcome == 'failure' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: llmv-final-review-failure
+          path: ${{ runner.temp }}/final-review-failure/failure.json
+          if-no-files-found: ignore
           retention-days: 7
 
   finalize:
@@ -284,40 +440,50 @@ jobs:
     if: ${{ always() && needs.prepare.result == 'success' && needs.experiments.result == 'success' && needs.initial_review.result == 'success' && (needs.initial_review.outputs.kind == 'judgment' || (needs.followup.result == 'success' && needs.final_review.result == 'success')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    outputs:
+      dossier_artifact: >-
+        ${{ format('{{"id":"{0}","name":"verifier-dossier","sha256":"{1}","run_id":"{2}","run_attempt":"{3}"}}', steps.dossier_archive.outputs.artifact-id, steps.dossier_archive.outputs.artifact-digest, github.run_id, github.run_attempt) }}
     env:
       LLMV_EXPECTED_INTAKE: ${{ needs.prepare.outputs.intake_sha256 }}
     steps:
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-package
-          path: ${{ runner.temp }}/wheel/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-intake
-          path: ${{ runner.temp }}/intake/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-experiments
-          path: ${{ runner.temp }}/initial/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        with:
-          name: llmv-initial-review
-          path: ${{ runner.temp }}/review/
+      - name: Bootstrap trusted artifact transfer before wheel download
+        env:
+          LLMV_TRANSFER_HELPER: ${{ needs.prepare.outputs.helper_base64 }}
+          LLMV_TRANSFER_SHA256: ${{ needs.prepare.outputs.helper_sha256 }}
+        shell: bash
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, os
+          from pathlib import Path
+          encoded = os.environ["LLMV_TRANSFER_HELPER"]
+          if not encoded or len(encoded) > 87384:
+              raise SystemExit("Invalid transfer helper size")
+          data = base64.b64decode(encoded, validate=True)
+          if len(data) > 65536 or hashlib.sha256(data).hexdigest() != os.environ["LLMV_TRANSFER_SHA256"]:
+              raise SystemExit("Invalid transfer helper digest")
+          root = Path(os.environ["GITHUB_WORKSPACE"]) / ".llmv-artifact-transfer"
+          root.mkdir()
+          with (root / "transfer.py").open("xb") as target:
+              target.write(data)
+          PY
+          python3 -I "$GITHUB_WORKSPACE/.llmv-artifact-transfer/transfer.py" install-action
+      - name: Download and verify immutable phase artifacts
+        uses: ./.llmv-artifact-transfer
+        timeout-minutes: 4
+        env:
+          LLMV_ARTIFACTS: >-
+            [
+              {"artifact":${{ needs.prepare.outputs.package_artifact }},"path":"wheel"},
+              {"artifact":${{ needs.prepare.outputs.intake_artifact }},"path":"intake"},
+              {"artifact":${{ needs.experiments.outputs.artifact }},"path":"initial"},
+              {"artifact":${{ needs.initial_review.outputs.artifact }},"path":"review"}
+              ${{ needs.initial_review.outputs.kind == 'followup' && format(',{{"artifact":{0},"path":"followup"}},{{"artifact":{1},"path":"final-review"}}', needs.followup.outputs.artifact, needs.final_review.outputs.artifact) || '' }}
+            ]
       - name: Setup verifier without package-network access
         shell: bash
         run: |
           python3 -m venv "$RUNNER_TEMP/llmv-env"
           "$RUNNER_TEMP/llmv-env/bin/python" -m pip install --no-index --no-deps "$RUNNER_TEMP"/wheel/*.whl
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        if: needs.initial_review.outputs.kind == 'followup'
-        with:
-          name: llmv-followup
-          path: ${{ runner.temp }}/followup/
-      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53
-        if: needs.initial_review.outputs.kind == 'followup'
-        with:
-          name: llmv-final-review
-          path: ${{ runner.temp }}/final-review/
       - name: Benchmark exact selected judgment and score path
         env:
           SCORE_PATH: ${{ inputs.score_path }}
@@ -338,6 +504,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Upload dossier separately
+        id: dossier_archive
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: verifier-dossier

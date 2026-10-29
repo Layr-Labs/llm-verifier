@@ -31,8 +31,9 @@ revisions. Upgrading means reviewing a new verifier commit, updating **both** th
 caller `uses` pin and implementation input together, and using the applicable
 Yukon reorg process. A change to only one pin fails before source installation.
 
-Checkout/upload/download actions use the exact known pins from the inspected
-HashSmash workflow. No callee checkout is assumed, no Git submodules are used,
+Checkout/upload actions retain their exact known pins. Downloads use the trusted
+standalone [artifact transfer helper](artifact-transfer.md), bootstrapped from
+prepare outputs before the wheel exists; legacy caller permissions are unchanged. No callee checkout is assumed, no Git submodules are used,
 and no input expression is interpolated into shell source. Shell arguments arrive
 through environment variables and are quoted. Bootstrap has no candidate imports.
 
@@ -74,8 +75,10 @@ and a real accepted hosted smoke test. No import has been performed here.
 `finalize` uses `always()` plus explicit success conditions for mandatory jobs,
 and requires both optional jobs only when initial review requested follow-up.
 Downloads of optional artifacts use the same condition. A failed job cannot be
-substituted by a previous successful review. The trusted intake digest is passed
-to every consuming phase through `LLMV_EXPECTED_INTAKE`.
+substituted by a previous successful review. The trusted intake envelope digest is passed
+to every consuming phase through `LLMV_EXPECTED_INTAKE`. Each transfer also
+requires the exact producer upload ID/name/run and verifies its archive SHA256
+before extraction. Transfer retries cannot invoke a verifier phase or a model.
 
 The only score upload is `benchmark-score`, containing exactly the manifest-relative
 `score_path`, e.g. `.yukon/score.json`, including hidden directories. `root_dir` is

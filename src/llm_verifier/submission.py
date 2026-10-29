@@ -30,7 +30,8 @@ def preflight_manifest(files, config, *, committee=None):
             for final in (False, True):
                 stage_schema(member, config, manifest, final,
                              single=committee["protocol"] == "single-v1",
-                             decomposed=committee["protocol"] == PROTOCOL)
+                             decomposed=committee["protocol"] == PROTOCOL,
+                             max_regions=committee.get("max_regions"))
     else:
         from .judgment import response_schema
         response_schema(config, manifest)

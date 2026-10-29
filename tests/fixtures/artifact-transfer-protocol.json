@@ -1,0 +1,23 @@
+{
+  "action_revision": "018cc2cf5baa6db3ef3c5f8a56943fffe632ef53",
+  "bundle_sha256": "080f0467d57952d7adb6b16a27b43c546a99609736bba5c799ff1d226007c06b",
+  "provenance": "Actual REST ID/name/size/digest from run 40947958680; synthetic backend UUIDs; serialized by exact pinned protobuf codec. Not a captured runtime response.",
+  "network_calls": 0,
+  "request": {
+    "workflow_run_backend_id": "ce7f54c7-61c7-4aae-887f-30da475f5f1a",
+    "workflow_job_run_backend_id": "ca395085-040a-526b-2ce8-bdc85f692774",
+    "id_filter": "12930800270"
+  },
+  "response": {
+    "artifacts": [
+      {
+        "workflow_run_backend_id": "ce7f54c7-61c7-4aae-887f-30da475f5f1a",
+        "workflow_job_run_backend_id": "ca395085-040a-526b-2ce8-bdc85f692774",
+        "database_id": "12930800270",
+        "name": "llmv-package",
+        "size": "94310",
+        "digest": "sha256:214b909133bfe302dde3a6483cf41294839cc35ce8f80a5308309fc9f1d888d0"
+      }
+    ]
+  }
+}

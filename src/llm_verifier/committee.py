@@ -71,16 +71,18 @@ def _string(maximum=4000):
     return {"type": "string", "maxLength": maximum}
 
 
-def stage_schema(member, config, manifest, final, single=False, decomposed=False):
+def stage_schema(member, config, manifest, final, single=False, decomposed=False, *, max_regions=regions.DEFAULT_MAX_REGIONS):
     local = {**config, "provider": member["provider"]}
     if single:
         return response_schema(local, manifest, final=final)
     if member["stage"] == "planning":
-        return _object({"regions": _array(_object({
+        # Planning must advertise the same selected bound used by freeze_plan.
+        integer(max_regions, 1, regions.MAX_REGIONS)
+        return _object({"regions": {**_array(_object({
             "id": _string(64), "path": _string(512),
             "start_line": {"type": "integer", "minimum": 1},
             "end_line": {"type": "integer", "minimum": 1},
-            "purpose": _string(2000)}), regions.MAX_REGIONS)})
+            "purpose": _string(2000)}), max_regions), "minItems": 1}})
     refs = _array(_string(8000))
     if member["stage"] in ("review", "region"):
         requests = response_schema(local, manifest, final=final)["properties"]["requests"]
@@ -168,7 +170,7 @@ def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, 
             frozen = regions.reuse_plan(plan, files, maximum)
         else:
             planner = next(m for m in members if m["stage"] == "planning")
-            report = call(planner, stage_schema(planner, config, manifest, final),
+            report = call(planner, stage_schema(planner, config, manifest, final, max_regions=maximum),
                           regions.planning_context(files, maximum))
             frozen = regions.freeze_plan(report, files, maximum)
         details.update(region_plan=frozen, region_coverage=[])
@@ -255,7 +257,7 @@ def _remaining(config, committee, records, prior, member):
     return seconds, requests
 
 
-def run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None, files=None, plan=None):
+def run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None, files=None, plan=None, capture=None):
     records, simulated = [], providers is not None
     details = {}
     registry = {m["id"]: m for m in committee["members"]}
@@ -272,7 +274,10 @@ def run(committee, config, manifest, refs, previous_runs, final, material, prior
             raise InfrastructureError("committee_review_budget_exhausted")
         provider = OpenAI(member["provider"]) if providers is None else providers[member["id"]]
         simulated |= type(provider) is not OpenAI or provider.simulation
-        report, provenance = provider.review(messages, schema, seconds, requests)
+        from .diagnostics import review_call
+        report, provenance = review_call(provider, member["provider"], messages, schema, seconds, requests, capture,
+                                        member=member["id"], stage=member["stage"],
+                                        region=context["region"]["id"] if member["stage"] == "region" else None)
         _provenance(provenance, member, messages, schema, simulated, seconds, requests)
         record = {"member_id": member["id"], "stage": member["stage"], "report": report, "provenance": provenance}
         if member["stage"] == "region":
@@ -284,7 +289,8 @@ def run(committee, config, manifest, refs, previous_runs, final, material, prior
     except InfrastructureError:
         raise
     except VerifierError as exc:
-        raise InfrastructureError("committee_invalid_review_" + str(exc)) from None
+        from .diagnostics import error_code
+        raise InfrastructureError("committee_invalid_review_" + error_code(exc)) from None
     elapsed = max(time.monotonic() - started, _spent(records)["elapsed_seconds"])
     if elapsed > phase_seconds:
         raise InfrastructureError("committee_review_budget_exhausted")

@@ -6,6 +6,9 @@ bounded computational evidence in Docker, asks an OpenAI reviewer or configured 
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
+Version 0.7.1 fixes selected planner schema bounds and retains separate, bounded
+[review failure diagnostics](docs/review-failures.md).
+
 Version 0.7 adds [challenge-owned judge committees](docs/judges.md), reusable
 personas, local catalogs and bounded source-region review. It retains atomic acceptance of the original declared claim set, automatic
 submission-ID references and the mandatory

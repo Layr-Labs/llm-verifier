@@ -79,8 +79,12 @@ input or authorize recovery/publication. Consumers must still validate source,
 configuration, intake, and phase lineage with their existing verifier contracts.
 A delivery rerun preserves the descriptors' original producer attempts and records
 its own `GITHUB_RUN_ATTEMPT` separately. The descriptor run ID must equal the current
-numeric run; a producer attempt cannot exceed the consumer's attempt. The helper
-is not a cross-run artifact recovery API.
+numeric run; a producer attempt cannot exceed the consumer's attempt. For a
+strictly older producer attempt, a retained artifact may have a different
+backend run UUID from the current consumer. The current authenticated runtime scope
+still lists the same fixed ID, and the returned producer IDs are used only after
+identity validation. Same-attempt backend mismatches fail. The helper is not a
+cross-run artifact recovery API.
 
 ## Transport and extraction contract
 
@@ -90,8 +94,11 @@ The implementation follows the runtime protocol in the exact previous
 1. Derive backend run/job IDs from the runner-provided `Actions.Results` scope.
    This parses context only; the GitHub service authenticates the token.
 2. `ListArtifacts` with a fixed `id_filter`. Require exactly one result, the exact
-   ID/name/backend run, a producer backend job, and a bounded archive size.
-   Check the API digest when present against the required producer archive digest.
+   ID/name, valid producer backend run/job UUIDs, and a bounded archive size.
+   Require backend run equality with the consumer for a same-attempt producer.
+   A strictly older protected producer attempt may use a different backend run;
+   the numeric GitHub run must still match. Check the API digest when present
+   against the required producer archive digest.
 3. Request `GetSignedArtifactURL` using that exact returned producer backend
    run/job/name. The runtime signing API does not accept an artifact ID.
 4. Download to a temporary archive, restarting/truncating all partial bytes and
@@ -151,8 +158,16 @@ A read-only replay also verified a real existing package ZIP's archive digest an
 safe extraction without installing or executing its wheel.
 
 The wrapper remains GitHub.com/Ubuntu-specific. It intentionally fails closed if
-GitHub changes its runtime protocol, service hosts, or backend run identity across
-attempts. Numeric same-run provenance does not relax the backend-run equality check.
+GitHub changes its runtime protocol or service hosts. On a consumer-only rerun,
+a retained artifact may carry an older producer backend run UUID.
+The protected descriptor's exact global ID/name/hash,
+numeric run and producer attempt remain authoritative. Every list request still
+uses the current consumer's authenticated scope; signing uses the returned producer
+only after exact identity checks, matching the pinned official client. There is
+no wider listing or name/latest fallback, and re-listed producer metadata must
+remain unchanged before extraction. The earlier unconditional backend equality
+check passed first-attempt hosted smoke but blocked a consumer-only rerun; the
+successor covers this case offline and requires hosted rerun qualification.
 `test-artifact-transfer.yml` adds a push/PR hosted smoke: upload a tiny known
 fixture, then bootstrap and download it in a separate consumer with no checkout
 and `permissions: {}`, checking exact bytes, file hash, and transfer receipt.

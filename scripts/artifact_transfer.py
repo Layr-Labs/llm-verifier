@@ -163,7 +163,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class Transfer:
-    def __init__(self, token, service_url):
+    def __init__(self, token, service_url, run_id, attempt):
+        if not positive(run_id) or not positive(attempt):
+            fail("invalid_run")
+        self.run_id, self.attempt = run_id, int(attempt)
         self.run, self.job = backend_ids(token)
         self.token = token
         self.service = https_url(service_url, service=True).rstrip("/")
@@ -253,6 +256,9 @@ class Transfer:
         return data.get(snake, data.get(camel))
 
     def metadata(self, ref):
+        if (ref.get("run_id") != self.run_id or not positive(ref.get("run_attempt"))
+                or int(ref["run_attempt"]) > self.attempt):
+            fail("wrong_producer_run")
         result = self.rpc("ListArtifacts", {"workflow_run_backend_id": self.run,
             "workflow_job_run_backend_id": self.job, "id_filter": ref["id"]})
         rows = result.get("artifacts")
@@ -262,10 +268,16 @@ class Transfer:
         row = {**raw, **{camel: self.field(raw, snake, camel) for snake, camel in (
             ("database_id", "databaseId"), ("workflow_run_backend_id", "workflowRunBackendId"),
             ("workflow_job_run_backend_id", "workflowJobRunBackendId"))}}
+        # Retained artifacts can belong to an older attempt's backend run. The
+        # protected descriptor fixes their global ID/name/hash/numeric run; List
+        # still uses current runtime scope. Sign only the returned producer, as
+        # the pinned official client does. Same-attempt backend drift is invalid.
         if (row.get("databaseId") != ref["id"] or row.get("name") != ref["name"]
-                or row.get("workflowRunBackendId") != self.run
-                or not isinstance(row.get("workflowJobRunBackendId"), str)
-                or not re.fullmatch(r"[0-9a-fA-F-]{36}", row["workflowJobRunBackendId"])):
+                or any(not isinstance(row.get(key), str)
+                       or not re.fullmatch(r"[0-9a-fA-F-]{36}", row[key])
+                       for key in ("workflowRunBackendId", "workflowJobRunBackendId"))
+                or (int(ref["run_attempt"]) == self.attempt
+                    and row["workflowRunBackendId"] != self.run)):
             fail("artifact_identity_mismatch")
         size = row.get("size")
         if not positive(size) or int(size) > MAX_ARCHIVE_BYTES:
@@ -414,7 +426,8 @@ def main():
             signal.signal(signal.SIGALRM, deadline)
             signal.setitimer(signal.ITIMER_REAL, DEADLINE_SECONDS)
             try:
-                transfer = Transfer(os.environ["ACTIONS_RUNTIME_TOKEN"], os.environ["ACTIONS_RESULTS_URL"])
+                transfer = Transfer(os.environ["ACTIONS_RUNTIME_TOKEN"], os.environ["ACTIONS_RESULTS_URL"],
+                                    os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
                 receipt = root / "llmv-transfer-receipt.json"
                 if receipt.exists() or receipt.is_symlink():
                     fail("receipt_exists")

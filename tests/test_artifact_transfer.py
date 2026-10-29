@@ -74,7 +74,7 @@ class Transport(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.data = archive()
         self.ref = identity(self.data)
-        self.client = t.Transfer(TOKEN, SERVICE)
+        self.client = t.Transfer(TOKEN, SERVICE, self.ref["run_id"], "1")
         self.open = Mock()
         self.client.opener.open = self.open
         self.sleep = self.enterContext(patch.object(t.time, 'sleep'))
@@ -241,13 +241,106 @@ class Transport(unittest.TestCase):
         self.assertEqual(observed['size'], '94310')  # Real archive size, not wheel size.
         self.assertEqual(observed['databaseId'], '12930800270')
 
-    def test_changed_backend_run_on_rerun_fails_closed(self):
-        # Numeric run and producer attempt may match; backend mismatch still cannot be widened.
+    def test_same_attempt_backend_run_mismatch_still_fails_closed(self):
+        # A same-attempt producer cannot use the retained-artifact exception.
         self.client.run = JOB
         self.script([Response(metadata(self.data))])
         with self.assertRaisesRegex(t.TransferError, 'artifact_identity_mismatch'):
             self.fetch()
         self.assertFalse((self.root/'wheel').exists())
+
+    def test_older_attempt_uses_current_list_scope_and_exact_returned_producer(self):
+        self.client.run, self.client.attempt = JOB, 2
+        self.script([ConnectionResetError('secret')] + self.success())
+        self.fetch()
+        lists = [json.loads(call.args[0].data) for call in self.open.call_args_list
+                 if call.args[0].full_url.endswith('ListArtifacts')]
+        self.assertEqual(lists, [{'workflow_run_backend_id': JOB,
+            'workflow_job_run_backend_id': JOB, 'id_filter': self.ref['id']}] * 3)
+        signed = [json.loads(call.args[0].data) for call in self.open.call_args_list
+                  if call.args[0].full_url.endswith('GetSignedArtifactURL')]
+        self.assertEqual(signed, [{'workflow_run_backend_id': RUN,
+            'workflow_job_run_backend_id': PRODUCER, 'name': self.ref['name']}])
+        self.assertEqual(self.sleep.call_count, 1)
+        self.assertEqual((self.root/'wheel/wheel.whl').read_bytes(), b'fixture-wheel')
+
+    def test_older_attempt_same_backend_still_works(self):
+        self.client.attempt = 2
+        self.script(self.success())
+        self.fetch()
+        self.assertEqual((self.root/'wheel/wheel.whl').read_bytes(), b'fixture-wheel')
+        self.sleep.assert_not_called()
+
+    def test_entrypoint_malformed_missing_future_other_run_references_fail_before_network(self):
+        entry = {'artifact':self.ref,'path':'wheel'}
+        manifests = ['not-json', '{}', '[null]', json.dumps([{'artifact':{},'path':'wheel'}])]
+        for key in self.ref:
+            ref = {k:v for k,v in self.ref.items() if k != key}
+            manifests.append(json.dumps([{**entry,'artifact':ref}]))
+        for key, value in [('run_id','999'),('run_attempt','3'),('run_attempt','0'),
+                           ('run_attempt',True),('run_attempt',None),('id',''),('sha256','bad')]:
+            manifests.append(json.dumps([{**entry,'artifact':{**self.ref,key:value}}]))
+        for manifest in manifests:
+            with self.subTest(manifest=manifest), patch.dict(os.environ,{**self.env(),'LLMV_ARTIFACTS':manifest},clear=True), patch.object(sys,'argv',['transfer.py','download']), patch.object(t,'Transfer') as constructor:
+                self.assertEqual(t.main(),1)
+                constructor.assert_not_called()
+                self.open.assert_not_called()
+
+    def test_older_attempt_identity_hash_and_backend_validation_remain_strict(self):
+        self.client.run, self.client.attempt = JOB, 2
+        for key, value in [('database_id','999'), ('name','other-package'),
+                           ('digest','sha256:'+'0'*64), ('size',str(t.MAX_ARCHIVE_BYTES+1)),
+                           ('workflow_run_backend_id',''), ('workflow_run_backend_id',None),
+                           ('workflow_job_run_backend_id','invalid')]:
+            with self.subTest(key=key):
+                body = metadata(self.data); body['artifacts'][0][key] = value
+                self.open.reset_mock(); self.script([Response(body)])
+                with self.assertRaises(t.TransferError): self.fetch()
+                self.assertEqual(self.open.call_count, 1)
+                self.assertFalse((self.root/'wheel').exists())
+        for rows in ([], metadata(self.data)['artifacts'] * 2):
+            self.script([Response({'artifacts':rows})])
+            with self.assertRaisesRegex(t.TransferError,'artifact_identity_not_unique'): self.fetch()
+        bad = bytearray(self.data); bad[4] ^= 1
+        self.script([Response(metadata(self.data)), Response({'signed_url':BLOB}), Response(bad)])
+        with patch.object(t,'extract') as extract:
+            with self.assertRaisesRegex(t.TransferError,'archive_digest_mismatch'): self.fetch()
+            extract.assert_not_called()
+
+    def test_older_attempt_before_after_producer_metadata_must_not_change(self):
+        self.client.run, self.client.attempt = JOB, 2
+        for key, value in [('workflow_run_backend_id',JOB), ('workflow_job_run_backend_id',JOB)]:
+            with self.subTest(key=key):
+                body = metadata(self.data); body['artifacts'][0][key] = value
+                self.script(self.success()[:3]+[Response(body)])
+                with self.assertRaisesRegex(t.TransferError,'artifact_identity_changed'): self.fetch()
+                self.assertFalse((self.root/'wheel').exists())
+                self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_core_rejects_different_numeric_run_or_invalid_producer_attempt_before_list(self):
+        self.client.run, self.client.attempt = JOB, 2
+        for key, value in [('run_id','999'), ('run_attempt','3'), ('run_attempt','0'),
+                           ('run_attempt',''), ('run_attempt',True), ('run_attempt',None)]:
+            with self.subTest(key=key):
+                ref = {**self.ref, key:value}
+                with self.assertRaisesRegex(t.TransferError,'wrong_producer_run'):
+                    self.client.fetch(ref,self.root/'wheel')
+                self.open.assert_not_called()
+        for run_id, attempt in [('', '2'), ('123', '0'), ('123', ''), ('123', True)]:
+            with self.assertRaisesRegex(t.TransferError,'invalid_run'):
+                t.Transfer(TOKEN,SERVICE,run_id,attempt)
+
+    def test_real_entrypoint_retained_producer_keeps_descriptor_and_delivery_attempt(self):
+        # Actual constructor reads attempt2 from the runner, while all producer fields stay1.
+        claims = base64.urlsafe_b64encode(json.dumps({'scp':f'Actions.Results:{JOB}:{JOB}'}).encode()).decode().rstrip('=')
+        env = {**self.env(), 'ACTIONS_RUNTIME_TOKEN':'fixture.'+claims+'.test-only'}
+        self.script(self.success())
+        with patch.object(t.urllib.request,'build_opener',return_value=self.client.opener), patch.dict(os.environ,env,clear=True), patch.object(sys,'argv',['transfer.py','download']):
+            self.assertEqual(t.main(),0)
+        receipt = json.loads((self.root/'llmv-transfer-receipt.json').read_text())
+        self.assertEqual(receipt, {'version':1,'run_id':self.ref['run_id'],'delivery_attempt':'2',
+            'artifacts':[{'artifact':self.ref,'path':'wheel','files':{'wheel.whl':hashlib.sha256(b'fixture-wheel').hexdigest()}}]})
+        self.assertEqual(receipt['artifacts'][0]['artifact']['run_attempt'],'1')
 
     def test_metadata_camelcase_and_missing_optional_digest(self):
         body = metadata(self.data)

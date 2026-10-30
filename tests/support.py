@@ -56,15 +56,16 @@ def scripted_model(decisions):
     # Worker arrival/completion order must not consume a global response queue.
     # These hooks are test-only; the real native adapter and executor still run.
     import threading
-    from llm_verifier import scheduler, escalation, parallel_escalation
+    from llm_verifier import scheduler, ready_scheduler, escalation, parallel_escalation
     from llm_verifier.jsonutil import digest
     responses = iter([completion(d) for d in decisions])
     missing = object()
     lock, local = threading.Lock(), threading.local()
-    assigned, children = {}, {}
+    assigned, children, plans = {}, {}, {}
     primary_ready = threading.Event()
     original_wave, original_invoke = scheduler.Runtime.wave, scheduler.Runtime.invoke
     original_context, original_run = escalation._context, parallel_escalation.run
+    original_submit = ready_scheduler.Runtime.submit
 
     def context(*args):
         value = original_context(*args)
@@ -77,17 +78,33 @@ def scripted_model(decisions):
             primary_ready.set()
         return original_run(*args, **kwargs)
 
-    def wave(self, tasks):
+    def prepare(self, tasks, *, ready=False):
         child = children.get(id(self.committee))
         if child == 'escalation' and not primary_ready.wait(5):
             raise AssertionError('primary fixture was not prepared')
         with lock:
             for member, schema, ctx in tasks:
                 fingerprint = digest(self.material(member, schema, ctx))
-                assigned[(id(self), fingerprint)] = next(responses, missing)
+                if ready and member['stage'] == 'planning' and id(self) in plans:
+                    response = plans.pop(id(self))
+                else:
+                    response = next(responses, missing)
+                    if ready and member['stage'] == 'review' and self.committee['protocol'] == 'decomposed-review-v1' and response is not missing:
+                        payload = json.loads(json.loads(response.body)['choices'][0]['message']['content'])
+                        if 'regions' in payload:
+                            plans[id(self)] = response
+                            response = next(responses, missing)
+                assigned[(id(self), fingerprint)] = response
         if child == 'primary':
             primary_ready.set()
+
+    def wave(self, tasks):
+        prepare(self, tasks)
         return original_wave(self, tasks)
+
+    def submit(self, tasks):
+        prepare(self, tasks, ready=True)
+        return original_submit(self, tasks)
 
     def invoke(self, member, schema, ctx, messages, *args):
         local.response = assigned[(id(self), digest(messages))]
@@ -106,6 +123,7 @@ def scripted_model(decisions):
     with patch.dict('os.environ', {'OPENAI_API_KEY': 'never-real-test-key'}), \
          patch.object(HttpTransport, 'request', side_effect=request), \
          patch.object(scheduler.Runtime, 'wave', wave), patch.object(scheduler.Runtime, 'invoke', invoke), \
+         patch.object(ready_scheduler.Runtime, 'submit', submit), \
          patch.object(escalation, '_context', context), patch.object(parallel_escalation, 'run', parallel_run):
         yield
 

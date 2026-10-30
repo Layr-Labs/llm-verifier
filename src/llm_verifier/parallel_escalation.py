@@ -3,7 +3,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import copy
 
-from . import escalation as legacy, scheduler
+from . import escalation as legacy, scheduler, ready_scheduler
 from .artifacts import verify_envelope
 from .diagnostics import ReviewDiagnostics
 from .errors import InfrastructureError, VerifierError
@@ -106,7 +106,7 @@ def _verify_round(value, context, intake, initial, first, followup, prior, histo
         if entry is None or entry["carried"] or name in reused:
             continue
         child = entry["review"] if entry["status"] == "completed" else entry["failure"]["state"]
-        for wave in child["execution"]["waves"]:
+        for wave in child["execution"].get("waves", child["execution"].get("groups", [])):
             for call in wave["calls"]:
                 if call["error"] == scheduler.EXHAUSTED:
                     member = next(m for m in profile[name]["members"] if m["id"] == call["member_id"])
@@ -114,6 +114,8 @@ def _verify_round(value, context, intake, initial, first, followup, prior, histo
                             spent["allotted_completion_tokens"] + member["provider"]["max_completion_tokens"] <= config["limits"]["total_review_tokens"] and
                             value["wall_elapsed_seconds"] < phase_limit):
                         raise VerifierError("escalation_exhaustion_binding")
+    ready_scheduler.verify_active_calls([e["review"] if e["status"] == "completed" else e["failure"]["state"]
+        for n, e in value["entries"].items() if e is not None and not e["carried"] and n not in reused], config)
     return value
 
 
@@ -178,7 +180,7 @@ def run(intake, initial, first=None, followup=None, *, providers=None, capture=N
                 raise VerifierError("committee_provider_members")
     captures = {n: ReviewDiagnostics(intake, parents, capture.phase, simulation, budget=capture) for n in active}
     used = legacy.add(prior, _history_spent(history))
-    with scheduler.Coordinator(config, used, seconds=_phase_limit(config, prior, history)) as coordinator:
+    with ready_scheduler.Coordinator(config, used, seconds=_phase_limit(config, prior, history)) as coordinator:
         def child(name):
             try:
                 review, _ = scheduler.run(profile[name], config, manifest, refs, count, final, material(profile[name]), used,

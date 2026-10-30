@@ -152,7 +152,7 @@ def _resolutions(items, findings, refs, adjudication=False):
         _refs(item["evidence_refs"], refs, required=adjudication and item["outcome"] == "dismissed")
 
 
-def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, files, plan, details, batch=None):
+def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, files, plan, details, batch=None, ready=None):
     """The same bounded state machine drives execution and artifact verification."""
     members = committee["members"]
     if committee["protocol"] == "single-v1":
@@ -161,6 +161,17 @@ def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, 
         return validate_decision(decision, config, manifest, refs, previous_runs, final=final)
     decomposed = committee["protocol"] == regions.PROTOCOL
     tasks = [(member, {}, member["id"]) for member in members if member["stage"] == "review"]
+    if decomposed and ready is not None:
+        if files is None:
+            raise VerifierError("region_sources_required")
+        regions.preflight(files, committee["max_regions"])
+        if final:
+            regions.reuse_plan(plan, files, committee["max_regions"])
+    pending = None
+    if ready is not None:
+        pending = ready.submit([(m, stage_schema(m, config, manifest, final, decomposed=decomposed), c)
+                                for m, c, _ in tasks])
+    review_count = len(tasks)
     if decomposed:
         if files is None:
             raise VerifierError("region_sources_required")
@@ -179,7 +190,12 @@ def _protocol(committee, config, manifest, refs, previous_runs, final, call, *, 
                      for region in frozen["regions"])
     reviews, findings, requests, requested = [], {}, [], set()
     prepared = [(m, stage_schema(m, config, manifest, final, decomposed=decomposed), c) for m, c, _ in tasks]
-    reports = batch(prepared) if batch is not None else (call(*task) for task in prepared)
+    if ready is not None:
+        if decomposed:
+            pending.extend(ready.submit(prepared[review_count:]))
+        reports = ready.gather(pending)
+    else:
+        reports = batch(prepared) if batch is not None else (call(*task) for task in prepared)
     for (member, context, name), report in zip(tasks, reports):
         if member["stage"] == "region":
             keys(report, {"assessment", "findings", "requests", "coverage"})

@@ -371,6 +371,12 @@
           "maximum": 2097152,
           "default": 262144,
           "description": "Requires judging. Sum of each member max_completion_tokens multiplied by its actual generation attempts, across both rounds; excludes input tokens. Failed escalation calls conservatively reserve their full allowed attempt count; both children and explicit resumes share this limit."
+        },
+        "max_concurrent_calls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "Optional global active model-call cap. Omit to run every dependency-ready call."
         }
       },
       "required": [],

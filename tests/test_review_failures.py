@@ -48,21 +48,25 @@ class ReviewFailures(unittest.TestCase):
             raw = '{"regions":[]}'
             envelope = loads(completion({}).body)
             envelope['choices'][0]['message']['content'] = raw
+            def transport(body, *args):
+                _, member, _ = request_parts(body)
+                return (HttpResponse(200, canonical(envelope)) if member['stage'] == 'planning'
+                        else completion(report()))
             with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}), patch.object(
-                    HttpTransport, 'request', return_value=HttpResponse(200, canonical(envelope))) as http:
+                    HttpTransport, 'request', side_effect=transport) as http:
                 code, stdout, stderr = cli_review(root, intake, initial)
             self.assertEqual(code, 2)
             self.assertIn('committee_invalid_review_region_plan_count', stderr)
             self.assertNotIn(raw, stdout + stderr)
-            http.assert_called_once()
+            self.assertEqual(http.call_count, 2)
             self.assertFalse((root / 'review.json').exists())
             failure = read_json(root / 'failure.json')
             data = verify_envelope(failure, 'review_failure', intake, [intake, initial])
             self.assertFalse(data['publishable'])
             self.assertFalse(failure['simulation'])
             self.assertEqual(data['phase'], 'initial')
-            self.assertEqual(data['calls'][0]['stage'], 'planning')
-            event = data['calls'][0]['events'][0]
+            self.assertEqual([c['stage'] for c in data['calls']], ['review', 'planning'])
+            event = data['calls'][1]['events'][0]
             self.assertEqual(event['response']['outputs'], [raw])
             self.assertEqual(event['response']['usage']['total_tokens'], 150)
             self.assertEqual(event['response']['id'], 'chatcmpl-test')
@@ -135,8 +139,8 @@ class ReviewFailures(unittest.TestCase):
             self.assertEqual(http.call_count, 5)
             failure = read_json(root / 'failure.json')
             calls = failure['data']['calls']
-            self.assertEqual([r['stage'] for r in calls], ['planning', 'review', 'region', 'region'])
-            self.assertEqual(json.loads(calls[0]['events'][0]['response']['outputs'][0]), plan)
+            self.assertEqual([r['stage'] for r in calls], ['review', 'planning', 'region', 'region'])
+            self.assertEqual(json.loads(calls[1]['events'][0]['response']['outputs'][0]), plan)
             self.assertEqual(calls[0]['events'][0]['response']['usage']['total_tokens'], 150)
             self.assertEqual(calls[1]['events'][0]['response']['usage']['total_tokens'], 150)
             self.assertEqual([v['attempt'] for v in calls[2]['events'] if 'attempt' in v], [1, 2])

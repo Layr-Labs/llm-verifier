@@ -53,13 +53,14 @@ They all retain access to the complete original evidence for context.
    one empty line. Protected rules and prior-result evidence remain available to
    every reviewer but are not candidate source regions.
 2. The verifier checks paths, ranges, gaps, overlaps and the region cap before
-   mathematical review. It freezes the plan against the source hashes. The
+   dispatching region reviews. It freezes the plan against the source hashes. The
    planner is asked to prefer individual proof obligations, estimates or cases,
    usually around four numbered equations; mathematical granularity remains a
    model judgment, not a structurally verified property.
-3. The whole-proof reviewer and assigned region calls run concurrently after
-   the plan is frozen, sharing the bounded scheduler described below. Every
-   call receives the complete original evidence; region calls also receive
+3. The independent whole-proof reviewer starts alongside the planner. Assigned
+   region calls start after the plan is frozen, sharing the scheduler described
+   below with any still-running proof review. Every call receives the complete
+   original evidence; region calls also receive
    numbered assigned lines. Results retain plan order regardless of completion
    order. A region report also contains `coverage`:
    `{region_id, start_line, end_line, complete}`. It must report the entire
@@ -330,13 +331,24 @@ With explicit `judging`, the default whole-evaluation inference limits are:
 | `total_review_seconds` | 1800 | 2400 |
 | `total_review_tokens` | 262144 | 2097152 |
 
-Independent model calls share one coordinator with at most **four active calls**
-across the entire phase. A selected primary and escalated judge share this same
-coordinator; their internal reviewers do not create separate four-call pools.
-The decomposed planner precedes region assignment, while defense and adjudication
-wait for the complete validated reports they consume. A coordinator waiting for
-its child work does not occupy a model-call slot. The ordinary single-reviewer
-path remains unchanged.
+Independent model calls share one coordinator across the entire phase, including
+both selected escalation children. By default, every dependency-ready call can
+run concurrently. The finite request ceiling explicitly sizes the lazy thread
+pool; there is no implicit four-call or Python-default worker cap. To limit
+active calls, set optional `limits.max_concurrent_calls` to an integer from 1
+through 64. Queued work enters each newly available slot immediately, without
+waiting for slower peers in a batch.
+
+The whole-proof reviewer and planner have independent inputs and start alongside
+the primary judge. Regions become ready when the planner's output has been
+validated and frozen, even while proof review remains active. Defense waits for
+all required reviews; adjudication waits for those reviews and any required
+defense. A coordinator waiting for its child work does not occupy a model-call
+slot. A native call keeps its slot through background polling and retries; each
+retry still requires fresh shared request/token admission. Aliases of the same
+stateful injected provider execute in logical order, without occupying workers
+while waiting on an earlier alias. The ordinary single-reviewer path remains
+unchanged.
 
 Concurrent call durations are retained individually, but the phase time budget
 uses elapsed wall time, including coordination and validation. Overlapping calls
@@ -492,9 +504,10 @@ Both children and all attempts/rounds/resumes share `total_provider_requests`,
 completion-token reservation limit, not an input-token or monetary cap. Actual
 reported prompt/completion usage is preserved per call. The coordinator reserves one request and the member's full
 `max_completion_tokens` allowance before each native generation attempt,
-including retries. First attempts are admitted before their wave is dispatched;
-a grant remains charged even if the call later fails or never reaches the
-provider. A full retry allowance is not reserved for every parallel member in
+including retries. First attempts are admitted when a worker dispatches the
+call, not while it waits in the queue. Queue wait consumes wall time but no
+request or token reservation. A grant remains charged if the admitted call
+later fails or never reaches the provider. A full retry allowance is not reserved for every parallel member in
 advance. Diagnostic usage is evidence, never invented success provenance.
 
 For any probability above zero, preflight requires capacity for **both** initial
@@ -528,9 +541,16 @@ immutable artifact transfer and consumer-only recovery are unchanged.
 In override mode an escalation failure writes no successful review. A primary
 failure also prevents a judgment in either mode. The versioned
 `parallel-children-v1` checkpoint retains both child outcomes, so a completed
-audit is preserved even if the primary fails. Child execution records use
-`independent-waves-v1`: stable task order, request grants, completion times and
-failures are replayed without summing overlapping durations. Fixed-size
+audit is preserved even if the primary fails. New child execution records use
+`dependency-ready-v1`: deterministic logical preparation groups, queue/start/end
+times and the optional concurrency cap. Groups are trace organization, not
+execution barriers. Whole-proof evidence precedes planning evidence in this
+version's logical record order. Replay checks dependency-ready times, active-call
+limits, request grants and failures without summing overlapping durations.
+Historical `independent-waves-v1` traces retain their four-call wave rules and
+planner-first order; earlier serial artifacts retain their original verifier.
+This compatibility does not bypass the separate installed-implementation binding
+of a full intake/dossier. Fixed-size
 per-attempt admission grants and terminal outcome/record-digest receipts remain
 available even when raw response capture is truncated. Replay checks these
 receipts against charged attempts and retained reports; changing a failure count
@@ -545,8 +565,8 @@ them only on successful return; the CLI waits until its successful atomic output
 write. A composition, serialization or output failure retains completed child
 evidence without inventing a combined judgment or permitting an automatic retry.
 After all admitted work has finished or failed, a resumable failure snapshot has
-status `settled` and contains the complete charged round history. Independent peers already admitted in a failed wave are
-drained and retained; a failed call does not discard their completed reports.
+status `settled` and contains the complete charged round history. Submitted independent peers are drained and retained; a failed call does not
+discard their completed reports or start dependent work.
 
 To retry only failed child graphs, explicitly pass the settled, trusted organizer
 artifact to the **same phase**, for example:

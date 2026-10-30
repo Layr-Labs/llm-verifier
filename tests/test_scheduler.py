@@ -56,7 +56,7 @@ class SchedulerTests(unittest.TestCase):
     def test_committee_overlap_cap_and_order(self):
         spec = {'profile': 'builtin:math-committee-v1', 'add_members': [
             {'id': n, 'stage': 'review', 'persona': 'builtin:proof-reviewer-v1'} for n in ('extra1', 'extra2')]}
-        with committee(judging=spec) as (root, effective, intake):
+        with committee(judging=spec, limits={'max_concurrent_calls': 4}) as (root, effective, intake):
             child = effective['judging']['committee']
             names = [m['id'] for m in child['members'] if m['stage'] == 'review']
             barrier = threading.Barrier(4, timeout=5)
@@ -82,14 +82,14 @@ class SchedulerTests(unittest.TestCase):
             initial = execute(intake)
             first = pipeline.review(intake, initial, providers=supplied)
             self.assertEqual(peak, 4)
-            self.assertEqual(order[:4], list(reversed(names[:4])))
+            self.assertEqual([n for n in order if n in names[:4]], list(reversed(names[:4])))
             self.assertEqual([r['member_id'] for r in first['data']['reviews'][:-1]], names)
             pipeline.dossier(intake, initial, first)
 
     def test_nested_children_share_four_model_slots(self):
         spec = {**PROFILE, 'primary': {'profile': 'builtin:math-committee-v1'},
                 'escalation': {'profile': 'builtin:math-committee-v1'}}
-        with committee(judging=spec) as (root, effective, intake):
+        with committee(judging=spec, limits={'max_concurrent_calls': 4}) as (root, effective, intake):
             profile = effective['judging']['committee']
             lock = threading.Lock(); barrier = threading.Barrier(4, timeout=5)
             active = peak = calls = 0
@@ -254,7 +254,7 @@ class SchedulerTests(unittest.TestCase):
                          lambda r: r['entries']['primary']['review']['provenance'].update(attempts=0),
                          lambda r: r['entries']['escalation']['failure']['state'].update(time_limit_seconds=0),
                          lambda r: r['entries']['escalation']['failure']['state']['execution'].update(offset_seconds=100),
-                         lambda r: r['entries']['escalation']['failure']['state']['execution']['waves'][0]['calls'][0].update(prompt_sha256='0'*64),
+                         lambda r: r['entries']['escalation']['failure']['state']['execution']['groups'][0]['calls'][0].update(prompt_sha256='0'*64),
                          lambda r: r.update(reused=['primary'])]
             for mutate in mutations:
                 bad = copy.deepcopy(original); mutate(bad['data']['escalation_checkpoint']['rounds'][0]); bad = reseal(bad)
@@ -307,7 +307,7 @@ class SchedulerTests(unittest.TestCase):
             self.assertEqual(transport.count, 2)
             for edit_receipt in (False, True):
                 bad = copy.deepcopy(first); state = bad['data']['escalation']['failure']['state']
-                state['execution']['waves'][0]['calls'][0]['attempts'] = 1
+                state['execution']['groups'][0]['calls'][0]['attempts'] = 1
                 if edit_receipt:
                     for calls in (state['calls'], bad['data']['escalation']['failure']['calls']):
                         calls[0]['outcome']['attempts'] = 1
@@ -326,7 +326,7 @@ class SchedulerTests(unittest.TestCase):
                 bad = copy.deepcopy(first); state = bad['data']['escalation']['failure']['state']
                 if delete:
                     state['reviews'] = [r for r in state['reviews'] if r['member_id'] != 'skeptic']
-                state['execution']['waves'][0]['calls'][1]['error'] = 'provider_timeout'
+                state['execution']['groups'][0]['calls'][1]['error'] = 'provider_timeout'
                 with self.subTest(delete=delete), self.assertRaises(VerifierError):
                     pipeline.verify_initial_review(intake, initial, reseal(bad))
 

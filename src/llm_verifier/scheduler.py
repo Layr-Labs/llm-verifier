@@ -200,7 +200,7 @@ class Runtime:
                 yield deliver(result)
 
 
-def run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None,
+def _wave_run(committee, config, manifest, refs, previous_runs, final, material, prior, *, providers=None,
         files=None, plan=None, capture=None, deadline=None, validator=None, coordinator=None):
     registry = {m["id"] for m in committee["members"]}
     if providers is not None and (type(providers) is not dict or providers.keys() != registry):
@@ -356,6 +356,10 @@ class Replay:
 
 def verify(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *,
            files=None, plan=None, validator=None, failed=False, phase_limit=None):
+    if value.get("execution", {}).get("version") == "dependency-ready-v1":
+        from .ready_scheduler import verify as ready_verify
+        return ready_verify(value, committee, config, manifest, refs, previous_runs, final, material, prior,
+                            simulation, files=files, plan=plan, validator=validator, failed=failed, phase_limit=phase_limit)
     extra = {"region_plan", "region_coverage"} if committee["protocol"] == regions.PROTOCOL else set()
     keys(value, {"reviews", "provenance", "execution"} | ({"error", "wall_elapsed_seconds", "time_limit_seconds"}
         if failed else {"decision"} | extra) | ({"calls"} if failed else set()))
@@ -403,3 +407,8 @@ def verify(value, committee, config, manifest, refs, previous_runs, final, mater
     if canonical(value["provenance"]) != canonical(expected):
         raise VerifierError("committee_budget_binding")
     return value
+
+
+def run(*args, **kwargs):
+    from .ready_scheduler import run as ready_run
+    return ready_run(*args, **kwargs)

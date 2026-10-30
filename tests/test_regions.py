@@ -140,7 +140,7 @@ class RegionReview(unittest.TestCase):
                 return completion(values[index])
             with patch.dict("os.environ", {"OPENAI_API_KEY": "test-only"}), patch.object(HttpTransport, "request", side_effect=request):
                 pipeline.review(intake, initial)
-            self.assertIn("numbered_sources", bodies[0]["messages"][1]["content"])
+            self.assertTrue(any("numbered_sources" in b["messages"][1]["content"] for b in bodies))
             for body in bodies:
                 self.assertNotIn("tools", body)
                 self.assertIn("There is no web/PDF retrieval.", body["messages"][0]["content"])
@@ -178,7 +178,7 @@ class RegionReview(unittest.TestCase):
                 lambda d: d["reviews"].insert(3, copy.deepcopy(d["reviews"][2])),
                 lambda d: d["reviews"][2].update(region_id="other"),
                 lambda d: d["reviews"][2]["report"]["coverage"].update(complete=False),
-                lambda d: d["reviews"][0]["report"]["regions"][0].update(purpose="Altered purpose"),
+                lambda d: next(r for r in d["reviews"] if r["stage"] == "planning")["report"]["regions"][0].update(purpose="Altered purpose"),
                 lambda d: d["region_plan"]["regions"].reverse(),
                 lambda d: d["region_plan"]["sources"]["proof.md"].update(sha256="0" * 64),
                 lambda d: d["region_coverage"].pop(),

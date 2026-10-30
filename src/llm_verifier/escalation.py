@@ -136,7 +136,8 @@ def _verify_entry(entry, name, context, intake, initial, first, followup, prior,
     if entry["status"] != "completed" or entry["carried"] is not False:
         raise VerifierError("escalation_review_status")
     committee.verify(entry["review"], profile[name], config, manifest, refs, count, final,
-                     material(profile[name]), prior, simulation, files=intake["data"]["files"], plan=_plan(first, name))
+                     material(profile[name]), prior, simulation, files=intake["data"]["files"], plan=_plan(first, name),
+                     execution_version=committee.SERIAL_EXECUTION)
     _check_decision(entry["review"], intake, initial, followup)
 
 
@@ -155,7 +156,8 @@ def _verify_failure(failure, context, intake, initial, first, followup, prior, s
     committee.verify_failure(failure["state"], profile["escalation"], config, manifest, refs, count, final,
                              material(profile["escalation"]), prior, simulation,
                              files=intake["data"]["files"], plan=_plan(first, "escalation"),
-                             validator=lambda v: _check_decision(v, intake, initial, followup))
+                             validator=lambda v: _check_decision(v, intake, initial, followup),
+                             execution_version=committee.SERIAL_EXECUTION)
 
 
 def _resume(value, context, intake, initial, first, followup, prior, simulation):
@@ -251,10 +253,8 @@ def _serial_run(intake, initial, first=None, followup=None, *, providers=None, c
     return result, simulation
 
 
-def verify(value, intake, initial, first, followup, simulation):
-    if "execution" in value:
-        from .parallel_escalation import verify as parallel_verify
-        return parallel_verify(value, intake, initial, first, followup, simulation)
+def _serial_verify(value, intake, initial, first, followup, simulation):
+    """Explicit historical replay only; current intakes never select this path."""
     context = _context(intake, initial, first, followup)
     profile, config, manifest, refs, count, final, material = context
     keys(value, {"selection", "primary", "escalation", "recovery", "recovery_elapsed_seconds", "decision", "authority", "comparison", "provenance"})
@@ -304,10 +304,12 @@ def verify(value, intake, initial, first, followup, simulation):
     return value
 
 
+def verify(value, intake, initial, first, followup, simulation):
+    from .parallel_escalation import verify as parallel_verify
+    return parallel_verify(value, intake, initial, first, followup, simulation)
+
+
 def run(intake, initial, first=None, followup=None, *, providers=None, capture=None, failure_out=None, resume=None):
-    if resume is not None and "version" not in resume.get("data", {}).get("escalation_checkpoint", {}):
-        return _serial_run(intake, initial, first, followup, providers=providers, capture=capture,
-                           failure_out=failure_out, resume=resume)
     from .parallel_escalation import run as parallel_run
     return parallel_run(intake, initial, first, followup, providers=providers, capture=capture,
                         failure_out=failure_out, resume=resume)

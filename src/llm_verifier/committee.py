@@ -11,6 +11,8 @@ from .provider import MAX_REVIEW_SECONDS, OpenAI, provider_endpoint
 from .submission import followup_plan
 from . import regions
 
+SERIAL_EXECUTION = "serial-v1"
+
 PROVENANCE_FIELDS = {"provider", "endpoint", "configured_model", "returned_model", "request_id", "usage",
                      "prompt_sha256", "schema_sha256", "provider_config_sha256", "attempts", "elapsed_seconds"}
 ROLE_INSTRUCTIONS = {
@@ -340,11 +342,20 @@ def run(committee, config, manifest, refs, previous_runs, final, material, prior
     return value, simulated
 
 
-def verify(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None):
-    if "execution" in value:
+def _execution_version(committee, requested):
+    # Current standalone single review is serial. Every current multi-reviewer
+    # graph is dependency-ready; historical replay must be explicitly requested.
+    return requested if requested is not None else (SERIAL_EXECUTION if committee["protocol"] == "single-v1" else "dependency-ready-v1")
+
+
+def verify(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None, execution_version=None):
+    execution_version = _execution_version(committee, execution_version)
+    if execution_version != SERIAL_EXECUTION:
         from .scheduler import verify as concurrent_verify
         return concurrent_verify(value, committee, config, manifest, refs, previous_runs, final,
-                                 material, prior, simulation, files=files, plan=plan)
+                                 material, prior, simulation, files=files, plan=plan, execution_version=execution_version)
+    if "execution" in value:
+        raise VerifierError("committee_execution_version")
     extra = {"region_plan", "region_coverage"} if committee["protocol"] == regions.PROTOCOL else set()
     keys(value, {"decision", "reviews", "provenance"} | extra)
     maximum = len(committee["members"]) + committee.get("max_regions", 1) - 1
@@ -408,13 +419,16 @@ def _failed_state(committee, records, interrupted, started, limit, code):
                            "elapsed_seconds": min(elapsed, limit)}}
 
 
-def verify_failure(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None, validator=None):
+def verify_failure(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *, files=None, plan=None, validator=None, execution_version=None):
     """Replay completed work up to a bound interruption; never return a decision."""
-    if "execution" in value:
+    execution_version = _execution_version(committee, execution_version)
+    if execution_version != SERIAL_EXECUTION:
         from .scheduler import verify as concurrent_verify
         return concurrent_verify(value, committee, config, manifest, refs, previous_runs, final,
                                  material, prior, simulation, files=files, plan=plan, validator=validator,
-                                 failed=True)
+                                 failed=True, execution_version=execution_version)
+    if "execution" in value:
+        raise VerifierError("committee_execution_version")
     from .diagnostics import error_code
     keys(value, {"error", "reviews", "interrupted", "provenance", "wall_elapsed_seconds", "time_limit_seconds"})
     text(value["error"], 128)

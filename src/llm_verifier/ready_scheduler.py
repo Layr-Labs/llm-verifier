@@ -7,9 +7,20 @@ import time
 
 from . import committee as protocol, regions, scheduler as old
 from .errors import InfrastructureError, VerifierError
-from .jsonutil import canonical, digest, integer, keys, number, text
+from .jsonutil import canonical, check_json, digest, integer, keys, number, text
 
 VERSION = "dependency-ready-v1"
+# A report can be nested in a failure, recovery round and a dossier phase.
+# Current response/input schemas need at most twelve relative levels. Reserve
+# sixteen enclosing levels before retaining a parsed report in any child state.
+REPORT_ENCLOSING_DEPTH = 16
+
+
+def check_report_headroom(report):
+    try:
+        check_json(report, depth=REPORT_ENCLOSING_DEPTH)
+    except VerifierError:
+        raise InfrastructureError("review_output_structure_limit") from None
 
 
 def capacity(config):
@@ -70,6 +81,9 @@ class Runtime(old.Runtime):
                           "max_concurrent_calls": self.coordinator.config["limits"].get("max_concurrent_calls"),
                           "groups": []}
         self.pending = []
+
+    def check_report(self, report):
+        check_report_headroom(report)
 
     def invoke(self, member, schema, context, messages, call, observe, provider):
         call["started_seconds"] = self.elapsed()
@@ -228,6 +242,7 @@ class Replay(old.Replay):
                 if call["finished_seconds"] > self.seconds:
                     raise old.ReplayBinding()
                 record = self.value["reviews"][self.record_index]
+                check_report_headroom(record["report"])
                 self.record_index += 1
                 record_binding = {k: expected[k] for k in ("member_id", "stage")}
                 if "region_id" in expected:

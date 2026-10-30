@@ -162,7 +162,7 @@ class ReadySchedulerTests(unittest.TestCase):
             value,_=scheduler._wave_run(*args,providers=providers(child,intake,verdict(root)))
             self.assertEqual(value['execution']['version'],'independent-waves-v1')
             self.assertEqual(len(value['execution']['waves'][0]['calls']),4)
-            scheduler.verify(value,*args,True)
+            scheduler.verify(value,*args,True,execution_version=scheduler.VERSION)
 
     def test_native_cap_two_is_shared_during_both_child_retries(self):
         spec = {**PROFILE,

@@ -87,7 +87,7 @@ def _verify_round(value, context, intake, initial, first, followup, prior, histo
         scheduler.verify(child, profile[name], config, manifest, refs, count, final, material(profile[name]),
             charged_before, simulation, files=intake["data"]["files"], plan=legacy._plan(first, name),
             validator=lambda v: legacy._check_decision(v, intake, initial, followup), failed=not complete,
-            phase_limit=phase_limit)
+            phase_limit=phase_limit, execution_version=ready_scheduler.VERSION)
         duration = child["provenance"]["elapsed_seconds"] if complete else child["wall_elapsed_seconds"]
         lower = max(lower, child["execution"]["offset_seconds"] + duration)
     number(value["wall_elapsed_seconds"], lower, 10**9)
@@ -194,7 +194,7 @@ def run(intake, initial, first=None, followup=None, *, providers=None, capture=N
                 return {"status": "failed", "carried": False, "failure": {"state": exc.review_state,
                     "calls": captures[name].calls, "truncated": captures[name].truncated, "overhead_seconds": 0}}
 
-        def snapshot():
+        def snapshot(*, persist=True):
             with capture._lock:
                 capture.calls = copy.deepcopy([call for n in NAMES if n in captures for call in captures[n].calls])
                 capture.checkpoint = {"version": VERSION, "status": "in-progress", "selection": selected,
@@ -202,7 +202,7 @@ def run(intake, initial, first=None, followup=None, *, providers=None, capture=N
                     "reserved_attempts": coordinator.attempts, "reserved_completion_tokens": coordinator.tokens,
                     "phase_time_limit_seconds": coordinator.limit,
                     "elapsed_seconds": min(coordinator.elapsed(), coordinator.limit), "recovery": history}
-            if failure_out is not None:
+            if persist and failure_out is not None:
                 capture.write(failure_out, InfrastructureError("escalation_in_progress"))
 
         # A trusted injected object can be stateful across both child registries.
@@ -211,11 +211,26 @@ def run(intake, initial, first=None, followup=None, *, providers=None, capture=N
                                                {id(p) for p in providers["escalation"].values()})
         with ThreadPoolExecutor(max_workers=1 if alias else 2, thread_name_prefix="judge-child") as children:
             futures = {children.submit(child, n): n for n in active}
+            first_error = None
             for future in as_completed(futures):
-                entries[futures[future]] = future.result()
-                # Persist completed primary (or audit) immediately. Open snapshots
-                # are diagnostic-only and can NEVER be resumed: grants still run.
-                snapshot()
+                try:
+                    entries[futures[future]] = future.result()
+                except Exception as exc:
+                    first_error = first_error or exc
+                # Persistence failure cannot abandon collection of already
+                # admitted peers. Keep refreshing diagnostic-only memory, then
+                # propagate the original error after every future is drained.
+                try:
+                    snapshot(persist=first_error is None)
+                except Exception as exc:
+                    first_error = first_error or exc
+            if first_error is not None:
+                try:
+                    first_error.escalation_checkpoint = capture.envelope(first_error)
+                except Exception:
+                    # Evidence serialization must not replace the first error.
+                    pass
+                raise first_error
         wall = coordinator.elapsed()
         round_value = {"entries": {n: entries[n] for n in NAMES}, "reused": reused,
                        "wall_elapsed_seconds": wall, "elapsed_seconds": min(wall, coordinator.limit)}

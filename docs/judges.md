@@ -550,7 +550,18 @@ limits, request grants and failures without summing overlapping durations.
 Historical `independent-waves-v1` traces retain their four-call wave rules and
 planner-first order; earlier serial artifacts retain their original verifier.
 This compatibility does not bypass the separate installed-implementation binding
-of a full intake/dossier. Fixed-size
+of a full intake/dossier. Current intake/review/resume paths require the current
+wrapper and child execution modes; removing a version or execution field never
+selects historical replay.
+
+Historical replay is an explicit low-level caller choice: pass
+`execution_version="independent-waves-v1"` to `scheduler.verify`, or
+`execution_version="serial-v1"` to `committee.verify` / `committee.verify_failure`.
+The internal `escalation._serial_verify` remains available for historical tooling;
+`escalation.verify` and `escalation.run` always use the current parallel wrapper.
+Current standalone single-reviewer committees keep their original serial mode.
+These caller choices are not configuration or artifact fields and must not be
+derived from an untrusted checkpoint. Fixed-size
 per-attempt admission grants and terminal outcome/record-digest receipts remain
 available even when raw response capture is truncated. Replay checks these
 receipts against charged attempts and retained reports; changing a failure count
@@ -564,6 +575,19 @@ through post-join composition, sealing and replay validation. Library calls clea
 them only on successful return; the CLI waits until its successful atomic output
 write. A composition, serialization or output failure retains completed child
 evidence without inventing a combined judgment or permitting an automatic retry.
+If an intermediate snapshot write fails, all admitted child results are still
+drained and collected. The original error carries the refreshed diagnostic-only
+checkpoint when serialization is possible; a later diagnostic-write failure does
+not replace that original error. No successful persistence is implied when the
+output path remains unavailable.
+
+Parsed responses reserve sixteen enclosing JSON levels before they can become
+retained review records. An overdeep response fails that call with
+`review_output_structure_limit`; its admitted attempts, completion reservations
+and failed outcome receipt remain charged. Its raw assistant text stays in the
+existing bounded, redacted diagnostic capture instead of being embedded as a
+deep parsed object. Valid schema outputs remain supported, and neither global
+JSON limits nor authority rules are relaxed.
 After all admitted work has finished or failed, a resumable failure snapshot has
 status `settled` and contains the complete charged round history. Submitted independent peers are drained and retained; a failed call does not
 discard their completed reports or start dependent work.

@@ -340,7 +340,12 @@ def review(intake, initial, initial_review=None, followup=None, *, provider=None
                 _verify_review(intake, initial, result, initial_review, followup)
             except Exception as exc:
                 if hasattr(diagnostics, "checkpoint"):
-                    exc.escalation_checkpoint = diagnostics.envelope(exc)
+                    try:
+                        exc.escalation_checkpoint = diagnostics.envelope(exc)
+                    except Exception:
+                        # Preserve the original failure if diagnostic encoding
+                        # itself is unavailable. Never fabricate a judgment.
+                        pass
                 raise
             # Keep completed-child evidence through composition and final replay.
             # A settled audit failure remains a separately retained diagnostic.

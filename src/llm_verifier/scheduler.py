@@ -111,6 +111,9 @@ class Runtime:
     def elapsed(self):
         return self.coordinator.elapsed() - self.offset
 
+    def check_report(self, report):
+        """Historical runtime hook; current execution reserves artifact headroom."""
+
     def invoke(self, member, schema, context, messages, call, observe, provider):
         try:
             with self.coordinator.resource(provider) if provider is not None else nullcontext():
@@ -139,6 +142,7 @@ class Runtime:
                     raise VerifierError("committee_attempt_binding")
                 if self.elapsed() > self.seconds:
                     raise InfrastructureError(EXHAUSTED)
+                self.check_report(report)
                 record = {"member_id": member["id"], "stage": member["stage"], "report": report, "provenance": saved}
                 if member["stage"] == "region":
                     record["region_id"] = context["region"]["id"]
@@ -355,8 +359,12 @@ class Replay:
 
 
 def verify(value, committee, config, manifest, refs, previous_runs, final, material, prior, simulation, *,
-           files=None, plan=None, validator=None, failed=False, phase_limit=None):
-    if value.get("execution", {}).get("version") == "dependency-ready-v1":
+           files=None, plan=None, validator=None, failed=False, phase_limit=None,
+           execution_version="dependency-ready-v1"):
+    # This argument is trusted caller context, never read from the artifact.
+    if execution_version not in ("dependency-ready-v1", VERSION) or value.get("execution", {}).get("version") != execution_version:
+        raise VerifierError("committee_execution_version")
+    if execution_version == "dependency-ready-v1":
         from .ready_scheduler import verify as ready_verify
         return ready_verify(value, committee, config, manifest, refs, previous_runs, final, material, prior,
                             simulation, files=files, plan=plan, validator=validator, failed=failed, phase_limit=phase_limit)

@@ -234,7 +234,12 @@ def capture_failure(path, intake, parents, phase, simulation):
     try:
         yield capture
     except Exception as exc:
-        capture.write(path, exc)
+        try:
+            capture.write(path, exc)
+        except Exception:
+            # A second persistence error must not replace the original failure.
+            # The caller's exception can still carry the in-memory checkpoint.
+            pass
         raise
 
 

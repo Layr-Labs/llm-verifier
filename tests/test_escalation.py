@@ -180,6 +180,7 @@ class Escalation(unittest.TestCase):
             self.assertFalse(first['data']['decision']['judgment']['valid'])
             pipeline.dossier(intake, initial, first)
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_test_http_failure_conservative_reservation_and_budget_exhaustion(self):
         for limits in ({'total_provider_requests': 3}, {'total_review_tokens': 3*8192}):
@@ -311,6 +312,7 @@ class Escalation(unittest.TestCase):
                     pipeline.review(intake, initial, first, followup)
                 transport.assert_not_called()
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_both_children_share_one_time_budget(self):
         class Measured(ScriptedProvider):
@@ -382,6 +384,7 @@ class Escalation(unittest.TestCase):
             with self.assertRaisesRegex(VerifierError, 'simulation_unexpected_member_reports'):
                 simulate(effective, root/'submission', script, root/'simulated.json')
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_test_saved_interruption_cannot_be_relabelled_semantic_failure(self):
         with committee(judging=SINGLES) as (root, _, intake):
@@ -401,6 +404,7 @@ class Escalation(unittest.TestCase):
                     pipeline.review(intake, initial, resume=reseal(saved))
                 transport.assert_not_called()
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_deadline_and_resume_charge_outer_work(self):
         from llm_verifier import escalation
@@ -484,6 +488,7 @@ class Escalation(unittest.TestCase):
             self.assertIn('PRIMARY_PRIVATE_VERDICT', canonical(followup).decode())
             pipeline.dossier(intake, initial, first, followup, final)
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_test_failure_deadline_cannot_refund_time_or_hide_completed_rejection(self):
         with committee(judging=SINGLES) as (root, _, intake):
@@ -526,6 +531,7 @@ class Escalation(unittest.TestCase):
             self.assertEqual(first['data']['recovery'], saved['rounds'])
             pipeline.dossier(intake, initial, first)
 
+    @patch('llm_verifier.escalation.verify', new=escalation._serial_verify)
     @patch('llm_verifier.escalation.run', new=escalation._serial_run)
     def test_legacy_exhausted_phase_has_no_fractional_time_from_cancellation(self):
         clock = [0.0]

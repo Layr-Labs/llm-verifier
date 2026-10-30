@@ -286,8 +286,13 @@ class SchedulerTests(unittest.TestCase):
                 pipeline.evidence_refs(intake, initial), len(initial['data']['runs']), False,
                 pipeline._committee_material(intake, initial, None, None), {}, providers=providers(child, intake, verdict(root)), serial=True)
             self.assertNotIn('execution', value)
+            runtime.verify(value, child, effective['config'], intake['data']['manifest'],
+                pipeline.evidence_refs(intake, initial), len(initial['data']['runs']), False,
+                pipeline._committee_material(intake, initial, None, None), {}, True,
+                execution_version=runtime.SERIAL_EXECUTION)
             first = seal('initial_review', intake['bindings'], value, [intake['sha256'], initial['sha256']], True)
-            pipeline.dossier(intake, initial, first)
+            with self.assertRaisesRegex(VerifierError, 'committee_execution_version'):
+                pipeline.dossier(intake, initial, first)
 
 
     def test_native_retry_receipts_reject_refund_and_hidden_peer(self):

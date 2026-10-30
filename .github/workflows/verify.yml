@@ -288,7 +288,7 @@ jobs:
           retention-days: 7
 
       - name: Retain initial review failure diagnostics
-        if: ${{ always() && steps.review.outcome == 'failure' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-initial-review-failure
@@ -426,7 +426,7 @@ jobs:
           retention-days: 7
 
       - name: Retain final review failure diagnostics
-        if: ${{ always() && steps.review.outcome == 'failure' }}
+        if: ${{ always() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: llmv-final-review-failure

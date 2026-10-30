@@ -79,3 +79,17 @@ has separate provenance. A new verifier release must not be substituted while
 replaying an old intake. Diagnostic artifacts cannot replace missing completed
 checkpoints or authorize a paid rerun. The consuming platform is responsible for
 authorizing recovery and preventing stale or duplicate publication.
+
+The opt-in [probabilistic escalation profile](judges.md#probabilistic-escalation-opt-in)
+also writes these diagnostics for an audit failure when the primary review succeeds.
+Its versioned `escalation_checkpoint` retains completed child work immediately.
+While calls remain in flight, status `in-progress` is diagnostic-only and rejects
+resume. Once all admitted calls settle, status `settled` retains both child
+outcomes and the charged round history for explicit same-phase resume. Completed
+children are reused and only failed child graphs restart. Fixed-size admission
+and terminal-outcome receipts bind charged attempts and retained reports even
+when raw diagnostic text is truncated. Composition or output failures preserve
+completed evidence as non-resumable diagnostics. Library calls clear provisional
+evidence only after successful composition, sealing and replay; the CLI additionally
+waits for the atomic successful-output write. None of these failure artifacts is
+a publishable judgment.

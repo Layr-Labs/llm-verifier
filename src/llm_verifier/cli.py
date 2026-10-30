@@ -67,10 +67,12 @@ def parser():
     artifacts(cmd, True)
     cmd.add_argument("--out", required=True)
     cmd.add_argument("--failure-out", help="Separate diagnostic artifact; defaults to OUT.failure.json")
+    cmd.add_argument("--resume", help="Trusted same-phase escalation failure checkpoint; retains completed primary work")
     cmd = sub.add_parser("review-final", help="OpenAI final review using OPENAI_API_KEY, judgment only")
     artifacts(cmd, True, True, True)
     cmd.add_argument("--out", required=True)
     cmd.add_argument("--failure-out", help="Separate diagnostic artifact; defaults to OUT.failure.json")
+    cmd.add_argument("--resume", help="Trusted same-phase escalation failure checkpoint; retains completed primary work")
     cmd = sub.add_parser("finalize", help="Validate chain and emit exactly one Yukon score plus dossier")
     artifacts(cmd, True, True)
     cmd.add_argument("--followup")
@@ -155,7 +157,7 @@ def run(args):
         if args.command in {"review-initial", "review-final"}:
             args.failure_out = args.failure_out or args.out + ".failure.json"
             distinct_paths([args.intake, args.initial, getattr(args, "initial_review", None),
-                            getattr(args, "followup", None)], [args.out, args.failure_out])
+                            getattr(args, "followup", None), args.resume], [args.out, args.failure_out])
             ensure_directory(Path(args.out).parent)
             ensure_directory(Path(args.failure_out).parent)
             clear_output(args.failure_out)
@@ -190,7 +192,8 @@ def run(args):
     elif args.command == "followup":
         result = execute(intake, first, initial)
     elif args.command in {"review-initial", "review-final"}:
-        result = review(intake, initial, first, followup, failure_out=args.failure_out)
+        result = review(intake, initial, first, followup, failure_out=args.failure_out,
+                        resume=read_json(args.resume) if args.resume else None, defer_checkpoint_cleanup=True)
         github_output("kind", result["data"]["decision"]["kind"])
     else:
         if args.score_dir and intake["data"]["context"].get("score_path") != args.score_path:
@@ -199,6 +202,10 @@ def run(args):
         finalize(intake, initial, first, args.score, args.dossier, followup, last, results_path=args.results, receipt_path=args.receipt)
         return
     write_json(args.out, result)
+    if args.command in {"review-initial", "review-final"} and result["data"].get("execution", {}).get("version") == "parallel-children-v1":
+        entries = [result["data"][name] for name in ("primary", "escalation")]
+        if not any(e is not None and not e["carried"] and e["status"] == "failed" for e in entries):
+            clear_output(args.failure_out)
 
 
 def main(argv=None):

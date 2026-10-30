@@ -6,6 +6,8 @@ bounded computational evidence in Docker, asks an OpenAI reviewer or configured 
 judgment or one optional follow-up batch, and writes one Yukon result plus an
 inspectable dossier. The core has no GitHub or database dependency.
 
+Version 0.8.2 runs every dependency-ready judge call concurrently by default, with an optional global `limits.max_concurrent_calls` cap and rolling slot refill. It includes opt-in [probabilistic escalation](docs/judges.md#probabilistic-escalation-opt-in): independent primary and sampled reviews, record-only or override authority, shared budgets, and explicit checkpoint resume. Independent committee reviewers and selected escalation children share a bounded parallel scheduler; judgment semantics and challenge defaults stay unchanged.
+
 Version 0.7.1 fixes selected planner schema bounds and retains separate, bounded
 [review failure diagnostics](docs/review-failures.md).
 
@@ -111,8 +113,10 @@ For a whole-proof reviewer plus workers assigned to a frozen source-region plan:
 {"judging": {"profile": "builtin:math-decomposed-v1"}}
 ```
 
-The planner and region calls share the same inference budget. Every region must
-report complete coverage before adjudication. See [decomposed review](docs/judges.md#decomposed-mathematical-review)
+Whole-proof review starts alongside the planner. Region reviewers start as soon
+as the plan is validated, sharing one optional concurrency cap and inference
+budget with the other calls. Every region must report complete coverage before
+adjudication. See [decomposed review](docs/judges.md#decomposed-mathematical-review)
 and the [offline example](examples/decomposed). External retrieval and acceptance
 semantics are unchanged.
 

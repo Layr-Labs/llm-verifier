@@ -53,13 +53,16 @@ They all retain access to the complete original evidence for context.
    one empty line. Protected rules and prior-result evidence remain available to
    every reviewer but are not candidate source regions.
 2. The verifier checks paths, ranges, gaps, overlaps and the region cap before
-   mathematical review. It freezes the plan against the source hashes. The
+   dispatching region reviews. It freezes the plan against the source hashes. The
    planner is asked to prefer individual proof obligations, estimates or cases,
    usually around four numbered equations; mathematical granularity remains a
    model judgment, not a structurally verified property.
-3. A whole-proof reviewer checks the original claims. The region member then
-   reviews each assignment in plan order, with numbered assigned lines and the
-   complete evidence. Its ordinary report also contains `coverage`:
+3. The independent whole-proof reviewer starts alongside the planner. Assigned
+   region calls start after the plan is frozen, sharing the scheduler described
+   below with any still-running proof review. Every call receives the complete
+   original evidence; region calls also receive
+   numbered assigned lines. Results retain plan order regardless of completion
+   order. A region report also contains `coverage`:
    `{region_id, start_line, end_line, complete}`. It must report the entire
    assignment as complete. Partial, missing or mismatched coverage fails the
    review as infrastructure failure; it never becomes an accepting verdict.
@@ -287,8 +290,9 @@ judgment-or-follow-up decision, augmented with the selected persona.
 `review-defense-adjudication-v1` requires one to six `review` members, exactly one
 `defense` member and exactly one `adjudication` member, with distinct IDs:
 
-1. Reviewers run in listed order, independently: each receives the same complete
-   evidence, its own persona and schema, and no peer reports. They return an
+1. Reviewers run concurrently within the shared worker limit; saved reports
+   retain listed order. Each receives the same complete evidence, its own
+   persona and schema, and no peer reports. They return an
    assessment, findings with local IDs and evidence references, and optional
    initial-round experiment requests. They do not return votes or scores.
 2. Requests are combined in stable member/request order and deduplicated by
@@ -326,6 +330,30 @@ With explicit `judging`, the default whole-evaluation inference limits are:
 | `total_provider_requests` | 24 | 64 |
 | `total_review_seconds` | 1800 | 2400 |
 | `total_review_tokens` | 262144 | 2097152 |
+
+Independent model calls share one coordinator across the entire phase, including
+both selected escalation children. By default, every dependency-ready call can
+run concurrently. The finite request ceiling explicitly sizes the lazy thread
+pool; there is no implicit four-call or Python-default worker cap. To limit
+active calls, set optional `limits.max_concurrent_calls` to an integer from 1
+through 64. Queued work enters each newly available slot immediately, without
+waiting for slower peers in a batch.
+
+The whole-proof reviewer and planner have independent inputs and start alongside
+the primary judge. Regions become ready when the planner's output has been
+validated and frozen, even while proof review remains active. Defense waits for
+all required reviews; adjudication waits for those reviews and any required
+defense. A coordinator waiting for its child work does not occupy a model-call
+slot. A native call keeps its slot through background polling and retries; each
+retry still requires fresh shared request/token admission. Aliases of the same
+stateful injected provider execute in logical order, without occupying workers
+while waiting on an earlier alias. The ordinary single-reviewer path remains
+unchanged.
+
+Concurrent call durations are retained individually, but the phase time budget
+uses elapsed wall time, including coordination and validation. Overlapping calls
+are not added together as if they ran sequentially. Request and completion-token
+reservations remain shared across every active call and retry.
 
 Explicit values in `limits` take precedence. Each review phase also has a hard
 1200-second wall deadline across all members. Review jobs retain their existing
@@ -393,3 +421,214 @@ Model calibration is separate from selecting or publishing a profile. Labeled
 valid/invalid and disagreement cases can later evaluate the chosen model settings;
 the verifier does not require a calibration pack to load a profile. Passing the
 protocol tests alone does not demonstrate improved judge accuracy.
+
+## Probabilistic escalation (opt-in)
+
+`builtin:probabilistic-escalation-v1` always runs the primary judge and samples
+submissions for an additional, independent escalated judge. The default primary
+is `builtin:single-v1`; the default escalation is the offline
+`builtin:math-decomposed-v1` profile described above (the Moonshot-inspired
+profile). Selecting this wrapper does not switch any existing challenge or model.
+Both children inherit the challenge provider unless their member overrides say
+otherwise. For example:
+
+```json
+{
+  "judging": {
+    "profile": "builtin:probabilistic-escalation-v1",
+    "probability": 0.1,
+    "mode": "record-only",
+    "seed": "challenge-audit-v1",
+    "primary": {
+      "profile": "builtin:single-v1",
+      "overrides": {"reviewer": {"provider": {"model": "YOUR_PRIMARY_MODEL"}}}
+    },
+    "escalation": {
+      "profile": "builtin:math-decomposed-v1",
+      "max_regions": 8,
+      "overrides": {"adjudicator": {"provider": {"model": "YOUR_ESCALATED_MODEL"}}}
+    }
+  }
+}
+```
+
+Omit both child selectors to use their defaults. In the example only the
+escalation adjudicator's model changes; set each child's member overrides to
+change the other roles. Ordinary inline definitions and local persona/profile
+catalogs are supported within each child. Their source files share the existing
+32-file/256-KiB protected judge-source cap. A child cannot select another
+escalation wrapper or a file pointer. The outer `judging` field may still point
+to a protected JSON file containing the complete wrapper.
+
+`probability` is a finite number in inclusive range 0..1, default **0.1**. Zero
+never escalates and one always escalates. `mode` defaults to **record-only**:
+
+- `record-only`: the primary decision is authoritative. A completed escalation,
+  including a disagreement, remains comparison evidence and cannot override it.
+- `override`: a selected escalation is authoritative, even when the primary
+  disagrees. Unselected submissions still use the primary decision. A failed
+  authoritative escalation produces an infrastructure failure and no judgment.
+
+The primary and selected escalation run concurrently. Neither child's prompt
+includes the other child's verdict or reports, including on final review. Both see the original protected
+rules, atomic claims, source files, prior-result evidence and captured experiments.
+A completed child must satisfy the same structured-claim acknowledgment and
+score/check gates as an ordinary review. The comparison reports separate validity
+and score disagreement, without turning disagreement into automatic rejection.
+Agreement is not a calibrated probability of correctness.
+
+### Sampling and ownership
+
+The protected challenge owner chooses `seed` (nonempty text up to 256 characters;
+default `organizer-default-v1`). It is public configuration, not a secret, and
+requires no additional credentials. The audit records `selection.inputs`, whose
+version is `sha256-submission-config-v1`, seed, and the intake's submission,
+effective-configuration and installed-verifier content hashes. Compute SHA-256
+of the library's canonical JSON encoding of those inputs, interpret all 256 bits
+as an unsigned big-endian integer, and select when it is below
+`floor(decimal(probability) * 2^256)`. `selection` saves the digest, probability,
+65-digit hexadecimal threshold and boolean outcome.
+
+The random evaluation ID, timestamps, transport attempts and review responses
+are excluded. Identical frozen source/configuration/verifier bytes produce the
+same selection across retry and replay, including a fresh intake of the same
+inputs. Changing the seed, configuration, submission or verifier can change it.
+Because the hash and seed are predictable, a solver can search for unselected
+variants: **this is not resistance to solver grinding or adversarial sampling**.
+
+### One budget, one follow-up batch
+
+Both children and all attempts/rounds/resumes share `total_provider_requests`,
+`total_review_tokens` and `total_review_seconds`. A phase also has one shared
+1,200-second wall deadline. `total_review_tokens` is the existing conservative
+completion-token reservation limit, not an input-token or monetary cap. Actual
+reported prompt/completion usage is preserved per call. The coordinator reserves one request and the member's full
+`max_completion_tokens` allowance before each native generation attempt,
+including retries. First attempts are admitted when a worker dispatches the
+call, not while it waits in the queue. Queue wait consumes wall time but no
+request or token reservation. A grant remains charged if the admitted call
+later fails or never reaches the provider. A full retry allowance is not reserved for every parallel member in
+advance. Diagnostic usage is evidence, never invented success provenance.
+
+For any probability above zero, preflight requires capacity for **both** initial
+profiles, including conditional defense and the escalation's full configured
+region cap. The defaults require 13 requests and 106,496 completion-token
+reservations. This admission rule applies even to subsequently unselected
+submissions; it does not reserve extra capacity for retries or final review.
+At zero probability only the primary's minimum budget is required. Schemas and
+source-file region caps for **both configured children** are checked at every
+probability, including zero and subsequently unselected submissions. Invalid
+escalation configuration is never hidden behind an unlucky sample.
+
+The union of both children's requested experiments is deduplicated by exact typed
+input and checked against the one existing follow-up budget. Audit-only requests
+can therefore trigger that batch. Overflow fails instead of silently dropping
+requests. On final review only children that requested follow-up run again;
+completed terminal decisions and failed audit evidence are carried unchanged.
+A carried decision retains its original evidence/provenance and consumes no new
+inference budget. If the primary was terminal, audit follow-up cannot replace it.
+
+### Failure evidence, replay and explicit resume
+
+A failed audit is recorded with its partial reports, interrupted request bindings,
+conservative budget reservation, redacted raw-response diagnostics and error.
+Its status is `failed`; there is no substitute judgment. In record-only mode the
+primary can still finalize. The main review/dossier includes this evidence and
+`--failure-out` also saves a separate `review_failure` artifact. Hosted workflows
+retain that diagnostic artifact even when the primary review succeeds. Existing
+immutable artifact transfer and consumer-only recovery are unchanged.
+
+In override mode an escalation failure writes no successful review. A primary
+failure also prevents a judgment in either mode. The versioned
+`parallel-children-v1` checkpoint retains both child outcomes, so a completed
+audit is preserved even if the primary fails. New child execution records use
+`dependency-ready-v1`: deterministic logical preparation groups, queue/start/end
+times and the optional concurrency cap. Groups are trace organization, not
+execution barriers. Whole-proof evidence precedes planning evidence in this
+version's logical record order. Replay checks dependency-ready times, active-call
+limits, request grants and failures without summing overlapping durations.
+Historical `independent-waves-v1` traces retain their four-call wave rules and
+planner-first order; earlier serial artifacts retain their original verifier.
+This compatibility does not bypass the separate installed-implementation binding
+of a full intake/dossier. Current intake/review/resume paths require the current
+wrapper and child execution modes; removing a version or execution field never
+selects historical replay.
+
+Historical replay is an explicit low-level caller choice: pass
+`execution_version="independent-waves-v1"` to `scheduler.verify`, or
+`execution_version="serial-v1"` to `committee.verify` / `committee.verify_failure`.
+The internal `escalation._serial_verify` remains available for historical tooling;
+`escalation.verify` and `escalation.run` always use the current parallel wrapper.
+Current standalone single-reviewer committees keep their original serial mode.
+These caller choices are not configuration or artifact fields and must not be
+derived from an untrusted checkpoint. Fixed-size
+per-attempt admission grants and terminal outcome/record-digest receipts remain
+available even when raw response capture is truncated. Replay checks these
+receipts against charged attempts and retained reports; changing a failure count
+or hiding a completed peer is rejected.
+
+When a child finishes, its evidence is immediately saved to `--failure-out`
+with checkpoint status `in-progress`, even while its peer is still running.
+These provisional snapshots are **diagnostic-only and cannot be resumed**:
+unknown later work must not be refunded or duplicated. They remain available
+through post-join composition, sealing and replay validation. Library calls clear
+them only on successful return; the CLI waits until its successful atomic output
+write. A composition, serialization or output failure retains completed child
+evidence without inventing a combined judgment or permitting an automatic retry.
+If an intermediate snapshot write fails, all admitted child results are still
+drained and collected. The original error carries the refreshed diagnostic-only
+checkpoint when serialization is possible; a later diagnostic-write failure does
+not replace that original error. No successful persistence is implied when the
+output path remains unavailable.
+
+Parsed responses reserve sixteen enclosing JSON levels before they can become
+retained review records. An overdeep response fails that call with
+`review_output_structure_limit`; its admitted attempts, completion reservations
+and failed outcome receipt remain charged. Its raw assistant text stays in the
+existing bounded, redacted diagnostic capture instead of being embedded as a
+deep parsed object. Valid schema outputs remain supported, and neither global
+JSON limits nor authority rules are relaxed.
+After all admitted work has finished or failed, a resumable failure snapshot has
+status `settled` and contains the complete charged round history. Submitted independent peers are drained and retained; a failed call does not
+discard their completed reports or start dependent work.
+
+To retry only failed child graphs, explicitly pass the settled, trusted organizer
+artifact to the **same phase**, for example:
+
+```sh
+llm-verifier review-initial --intake intake.json --initial initial.json \
+  --resume previous.failure.json --out retried-review.json \
+  --failure-out retried.failure.json
+```
+
+Resume requires identical intake bindings (including evaluation ID, frozen
+configuration, original source and installed verifier), exact ordered phase-parent
+hashes, selection, child prompt/schema/provider provenance and replayable failed
+attempts. For final review the original initial review and follow-up experiment
+artifacts must also match. Inputs and output/diagnostic paths must be distinct.
+Completed children are reused exactly: primary inference is not repeated after
+an audit failure, and a completed audit is not repeated after a primary failure.
+The whole prior round's wall time and every granted request/token reservation
+remain charged once. Failed children restart their protocol, including planning
+in the initial phase; partial reports remain evidence rather than judgments.
+Exhausted budgets refuse new inference. A timeout consumes its remaining time
+reservation; actual wall time, including deadline overrun, remains in failure
+evidence. Record-only can still finalize a completed primary after an audit
+failure.
+
+Legacy serial review artifacts retain their replay path. Ordinary hosted reruns
+do not automatically resume failed model reviews; a consumer-only artifact retry
+still performs no model calls. There is no distributed lease or automatic recovery
+of an in-progress snapshot.
+
+Successful artifacts include both child envelopes, the versioned selection,
+authority and reason, comparison, and aggregate reservation provenance. Dossier,
+score finalization and accepted-result export replay these bindings without model
+calls. Offline simulation uses `initial_reviews.primary` and
+`initial_reviews.escalation` (and similarly `final_reviews`) as member-to-report
+maps. Omit an unselected or carried child's reports; extra reports fail. Region
+members still use ordered arrays. Calls sharing the same injected provider object
+are serialized in logical order to preserve stateful simulation behavior; distinct
+objects can overlap. Native calls use separate provider instances. Simulations
+remain unpublishable. See the
+[escalation example](../examples/escalation) for a runnable always-selected audit.

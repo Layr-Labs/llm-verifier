@@ -239,16 +239,16 @@ class OpenAI:
         self.simulation = transport is not None
         self.sleeper = sleeper
 
-    def review(self, messages, schema, seconds, requests, *, observer=None):
+    def review(self, messages, schema, seconds, requests, *, observer=None, reserve=None):
         try:
-            return self._review(messages, schema, seconds, requests, observer)
+            return self._review(messages, schema, seconds, requests, observer, reserve)
         except InfrastructureError as exc:
             if observer is not None:
                 from .diagnostics import error_code
                 observer({"error": error_code(exc)})
             raise
 
-    def _review(self, messages, schema, seconds, requests, observer):
+    def _review(self, messages, schema, seconds, requests, observer, reserve=None):
         config = self.config
         response_format = {"type": config["response_format"]}
         if config["response_format"] == "json_schema":
@@ -280,6 +280,9 @@ class OpenAI:
             remaining = seconds - (time.monotonic() - started)
             if remaining <= 0:
                 raise InfrastructureError("provider_time_budget")
+            if reserve is not None:
+                # Reserve every generation, including retries, before dispatch.
+                remaining = min(remaining, reserve())
             response = None
             try:
                 response = self.transport.request(body, self._key, min(remaining, config["timeout_seconds"]), config["max_response_bytes"])

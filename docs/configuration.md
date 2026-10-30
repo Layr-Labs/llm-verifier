@@ -69,6 +69,12 @@ With `judging`, the shared reserved completion-token budget defaults to 262,144
 and has a hard maximum of 2,097,152. Initial capacity must cover every member,
 including conditional defense; see [committee budgets](judges.md#budgets-and-immutable-provenance).
 
+`limits.max_concurrent_calls` is optional: supply an integer from 1 through 64 to
+limit active model calls globally across both escalation children. Omission runs
+all dependency-ready calls, subject to the shared request/token/time limits. No
+default field is inserted into normalized configuration. Capped work queues and
+refills each available slot immediately; the cap does not create batch barriers.
+
 Candidate experiments and organizer checks share all run/time/output budgets.
 The registry source union independently uses the same file/count/byte caps as the
 candidate snapshot; see [checker bundle limits](checkers.md).
@@ -323,3 +329,7 @@ left at its default. An explicit `--submission` must also remain in that directo
 The selector is protected from candidate placement and score output. `preflight`,
 `intake`, `simulate` and hosted preparation resolve it identically; unsafe,
 symlinked and cross-track selections fail before snapshotting candidate files.
+
+Opt-in [probabilistic escalation](judges.md#probabilistic-escalation-opt-in) always
+runs a primary judge and independently samples an additional review, with
+configurable frequency, record-only/override authority and a shared budget.

@@ -103,7 +103,7 @@ def normalize(raw):
         if canonical(raw["policies"][field]) not in selectors:
             raise VerifierError("unsupported_default_policy")
     supplied = raw.get("limits", {})
-    keys(supplied, set(), set(LIMITS))
+    keys(supplied, set(), set(LIMITS) | {"max_concurrent_calls"})
     if "judging" not in raw and "total_review_tokens" in supplied:
         raise VerifierError("review_tokens_require_judging")
     limits = {name: supplied.get(name, spec[0]) for name, spec in LIMITS.items()
@@ -114,6 +114,9 @@ def normalize(raw):
     for name, (_, low, high) in LIMITS.items():
         if name in limits:
             integer(limits[name], low, high)
+    if "max_concurrent_calls" in supplied:
+        integer(supplied["max_concurrent_calls"], 1, 64)
+        limits["max_concurrent_calls"] = supplied["max_concurrent_calls"]
     checkers = raw.get("checkers", [])
     if type(checkers) is not list or len(checkers) > 16:
         raise VerifierError("checker_count")

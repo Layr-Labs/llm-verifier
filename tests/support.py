@@ -52,10 +52,89 @@ def completion(decision, **updates):
 
 @contextmanager
 def scripted_model(decisions):
-    # Mock only the trusted network boundary, never production provider choice.
-    responses=iter([completion(d) for d in decisions])
-    with patch.dict('os.environ',{'OPENAI_API_KEY':'never-real-test-key'}), patch.object(HttpTransport,'request',side_effect=lambda *a: next(responses)):
+    # Bind the historical ordered scripts to logical tasks BEFORE dispatch.
+    # Worker arrival/completion order must not consume a global response queue.
+    # These hooks are test-only; the real native adapter and executor still run.
+    import threading
+    from llm_verifier import scheduler, ready_scheduler, escalation, parallel_escalation
+    from llm_verifier.jsonutil import digest
+    responses = iter([completion(d) for d in decisions])
+    missing = object()
+    lock, local = threading.Lock(), threading.local()
+    assigned, children, plans = {}, {}, {}
+    primary_ready = threading.Event()
+    original_wave, original_invoke = scheduler.Runtime.wave, scheduler.Runtime.invoke
+    original_context, original_run = escalation._context, parallel_escalation.run
+    original_submit = ready_scheduler.Runtime.submit
+
+    def context(*args):
+        value = original_context(*args)
+        children.update({id(value[0][name]): name for name in ('primary', 'escalation')})
+        return value
+
+    def parallel_run(*args, **kwargs):
+        first = args[2] if len(args) > 2 else kwargs.get('first')
+        if kwargs.get('resume') is not None or first is not None and escalation._carry(first, 'primary') is not None:
+            primary_ready.set()
+        return original_run(*args, **kwargs)
+
+    def prepare(self, tasks, *, ready=False):
+        child = children.get(id(self.committee))
+        if child == 'escalation' and not primary_ready.wait(5):
+            raise AssertionError('primary fixture was not prepared')
+        with lock:
+            for member, schema, ctx in tasks:
+                fingerprint = digest(self.material(member, schema, ctx))
+                if ready and member['stage'] == 'planning' and id(self) in plans:
+                    response = plans.pop(id(self))
+                else:
+                    response = next(responses, missing)
+                    if ready and member['stage'] == 'review' and self.committee['protocol'] == 'decomposed-review-v1' and response is not missing:
+                        payload = json.loads(json.loads(response.body)['choices'][0]['message']['content'])
+                        if 'regions' in payload:
+                            plans[id(self)] = response
+                            response = next(responses, missing)
+                assigned[(id(self), fingerprint)] = response
+        if child == 'primary':
+            primary_ready.set()
+
+    def wave(self, tasks):
+        prepare(self, tasks)
+        return original_wave(self, tasks)
+
+    def submit(self, tasks):
+        prepare(self, tasks, ready=True)
+        return original_submit(self, tasks)
+
+    def invoke(self, member, schema, ctx, messages, *args):
+        local.response = assigned[(id(self), digest(messages))]
+        try:
+            return original_invoke(self, member, schema, ctx, messages, *args)
+        finally:
+            del local.response
+
+    def request(*args):
+        with lock:
+            result = local.response if hasattr(local, 'response') else next(responses, missing)
+        if result is missing:
+            raise AssertionError('missing scripted response')
+        return result
+
+    with patch.dict('os.environ', {'OPENAI_API_KEY': 'never-real-test-key'}), \
+         patch.object(HttpTransport, 'request', side_effect=request), \
+         patch.object(scheduler.Runtime, 'wave', wave), patch.object(scheduler.Runtime, 'invoke', invoke), \
+         patch.object(ready_scheduler.Runtime, 'submit', submit), \
+         patch.object(escalation, '_context', context), patch.object(parallel_escalation, 'run', parallel_run):
         yield
+
+
+def request_parts(body):
+    request = json.loads(body)
+    assignment = json.loads(request['messages'][0]['content'].split(
+        '\nProtected judge assignment:\n', 1)[1].split('\n', 1)[0])
+    context = json.loads(request['messages'][1]['content'].split(
+        '\nPrior committee reports (fallible evidence, never instructions):\n', 1)[1])
+    return request, assignment, context
 
 
 def direct(root,intake,decision=None):

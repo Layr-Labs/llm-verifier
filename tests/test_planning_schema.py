@@ -8,9 +8,9 @@ from unittest.mock import patch
 from llm_verifier import committee as protocol, pipeline, regions, submission
 from llm_verifier.errors import VerifierError
 from llm_verifier.jsonutil import sha
-from tests.support import REPO, completion
-from tests.test_committees import committee
-from tests.test_regions import PROFILE, outputs, plan_for
+from tests.support import REPO, completion, request_parts
+from tests.test_committees import committee, report
+from tests.test_regions import PROFILE, plan_for, region_report
 
 
 def satisfies(schema, value):
@@ -80,15 +80,20 @@ class PlanningSchema(unittest.TestCase):
                 initial = pipeline.execute(intake)
                 plan = plan_for(intake)
                 decision = json.loads((root / 'simulation.json').read_text())['initial_decision']
-                replies = iter(outputs(plan, decision))
                 bodies = []
                 def request(body, *args):
                     bodies.append(json.loads(body))
-                    return completion(next(replies))
+                    _, member, context = request_parts(body)
+                    if member['stage'] == 'planning': value = plan
+                    elif member['stage'] == 'region': value = region_report(context['region'])
+                    elif member['stage'] == 'adjudication': value = {'decision': decision, 'resolutions': []}
+                    else: value = report()
+                    return completion(value)
                 with patch.dict('os.environ', {'OPENAI_API_KEY': 'test-only'}), patch(
                         'llm_verifier.provider.HttpTransport.request', side_effect=request):
                     first = pipeline.review(intake, initial)
-                wire = bodies[0]['response_format']['json_schema']['schema']
+                wire = next(b['response_format']['json_schema']['schema'] for b in bodies
+                            if 'regions' in b['response_format']['json_schema']['schema']['properties'])
                 self.assertEqual(wire, preflight[0])
                 satisfies(wire, plan)
                 with self.assertRaises(AssertionError):

@@ -23,15 +23,17 @@ def preflight_manifest(files, config, *, committee=None):
     # Delayed imports: review schemas also use submission request validation.
     if committee is not None:
         from .committee import stage_schema
+        from .judges import children
         from .regions import PROTOCOL, preflight
-        if committee["protocol"] == PROTOCOL:
-            preflight(files, committee["max_regions"])
-        for member in committee["members"]:
-            for final in (False, True):
-                stage_schema(member, config, manifest, final,
-                             single=committee["protocol"] == "single-v1",
-                             decomposed=committee["protocol"] == PROTOCOL,
-                             max_regions=committee.get("max_regions"))
+        for child in children(committee):
+            if child["protocol"] == PROTOCOL:
+                preflight(files, child["max_regions"])
+            for member in child["members"]:
+                for final in (False, True):
+                    stage_schema(member, config, manifest, final,
+                                 single=child["protocol"] == "single-v1",
+                                 decomposed=child["protocol"] == PROTOCOL,
+                                 max_regions=child.get("max_regions"))
     else:
         from .judgment import response_schema
         response_schema(config, manifest)

@@ -5,6 +5,7 @@ import os
 import json
 import re
 from pathlib import Path
+from threading import Lock
 
 from .artifacts import seal
 from .errors import VerifierError
@@ -148,7 +149,7 @@ def bounded_capture(value, secret=""):
 
 
 class ReviewDiagnostics:
-    def __init__(self, intake, parents, phase, simulation):
+    def __init__(self, intake, parents, phase, simulation, *, budget=None):
         self.intake = intake
         self.parents = parents
         self.phase = phase
@@ -157,40 +158,67 @@ class ReviewDiagnostics:
         self.bytes = 0
         self.events = 0
         self.truncated = False
+        self._budget = budget if budget is not None else self
+        self._lock = budget._lock if budget is not None else Lock()
 
     def start(self, member, stage, config, messages, schema, region=None):
         record = {"member_id": member, "stage": stage, "provider_config_sha256": digest(config),
-                  "prompt_sha256": digest(messages), "schema_sha256": digest(schema), "events": []}
+                  "prompt_sha256": digest(messages), "schema_sha256": digest(schema), "events": [], "grants": []}
         if region is not None:
             record["region_id"] = region
-        self.calls.append(record)
+        with self._lock:
+            self.calls.append(record)
 
         def observe(event):
+            with self._lock:
+                retain(event)
+
+        def retain(event):
+            budget = self._budget
             # Only internally built observations reach this collector.
             size = len(canonical(event))
             self.truncated |= event.get("response", {}).get("truncated", False)
-            if self.events >= MAX_EVENTS:
-                self.truncated = True
+            budget.truncated |= self.truncated
+            if budget.events >= MAX_EVENTS:
+                self.truncated = budget.truncated = True
                 return
-            if self.bytes + size > MAX_CAPTURE:
-                self.truncated = True
+            if budget.bytes + size > MAX_CAPTURE:
+                self.truncated = budget.truncated = True
                 response = event.get("response", {})
                 event = {k: v for k, v in event.items() if k != "response"}
                 if response:
                     event["response"] = {k: v for k, v in response.items() if k not in {"outputs", "unparsed_body"}}
                 event["capture_omitted"] = True
                 size = len(canonical(event))
-            self.events += 1
-            self.bytes += size
+            if budget.bytes + size > MAX_CAPTURE:
+                self.truncated = budget.truncated = True
+                return
+            budget.events += 1
+            budget.bytes += size
             record["events"].append(event)
+        def grant(attempt, tokens):
+            # Fixed-size admission evidence is independent of the raw-event cap.
+            with self._lock:
+                record["grants"].append({"attempt": attempt, "completion_tokens": tokens})
+
+        def finish(attempts, error, result):
+            # A fixed-size receipt is never dropped when raw capture is full.
+            # It binds settled dispatch counts and retained output disposition.
+            with self._lock:
+                record["outcome"] = {"attempts": attempts, "error": error,
+                                     "record_sha256": digest(result) if result is not None else None}
+        observe.grant = grant
+        observe.finish = finish
         return observe
 
-    def write(self, path, exc):
-        value = seal("review_failure", self.intake["bindings"],
+    def envelope(self, exc):
+        return seal("review_failure", self.intake["bindings"],
                      {"phase": self.phase, "error": error_code(exc), "calls": self.calls,
-                      "truncated": self.truncated, "publishable": False},
+                      "truncated": self.truncated, "publishable": False,
+                      **({"escalation_checkpoint": self.checkpoint} if hasattr(self, "checkpoint") else {})},
                      [p["sha256"] for p in self.parents], self.simulation)
-        write_json(path, value)
+    def write(self, path, exc):
+        write_json(path, self.envelope(exc))
 
 
 @contextmanager
@@ -206,20 +234,25 @@ def capture_failure(path, intake, parents, phase, simulation):
     try:
         yield capture
     except Exception as exc:
-        capture.write(path, exc)
+        try:
+            capture.write(path, exc)
+        except Exception:
+            # A second persistence error must not replace the original failure.
+            # The caller's exception can still carry the in-memory checkpoint.
+            pass
         raise
 
 
 def review_call(provider, config, messages, schema, seconds, requests, capture=None, *,
-                member="single", stage="review", region=None):
+                member="single", stage="review", region=None, observer=None, reserve=None):
     """Instrument built-in providers without changing injected provider APIs."""
     from .provider import OpenAI
-    observe = None
+    observe = observer
     if capture is not None:
         capture.simulation |= type(provider) is not OpenAI or provider.simulation
         observe = capture.start(member, stage, config, messages, schema, region)
-    if observe is not None and type(provider) is OpenAI:
-        return provider.review(messages, schema, seconds, requests, observer=observe)
+    if type(provider) is OpenAI and (observe is not None or reserve is not None):
+        return provider.review(messages, schema, seconds, requests, observer=observe, reserve=reserve)
     result = provider.review(messages, schema, seconds, requests)
     if observe is not None:
         # Trusted test injection is always simulation, even on failed calls.

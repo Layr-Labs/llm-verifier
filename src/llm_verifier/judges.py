@@ -5,7 +5,7 @@ import re
 
 from .errors import VerifierError
 from .files import outside, read_bytes, relative, utf8, validate_files
-from .jsonutil import canonical, digest, integer, keys, loads, sha, text
+from .jsonutil import canonical, digest, integer, keys, loads, number, sha, text
 from .regions import PROTOCOL as DECOMPOSED, DEFAULT_MAX_REGIONS, MAX_REGIONS
 
 DIRECTORY = Path(__file__).parent / "judges"
@@ -15,6 +15,14 @@ SOURCE_LIMITS = {"max_files": 32, "max_file_bytes": 65536, "max_submission_bytes
 MEMBER_SETTINGS = {"model", "reasoning_effort", "max_completion_tokens", "timeout_seconds",
                    "max_attempts", "max_response_bytes", "response_format", "background"}
 NAME = re.compile(r"(builtin|local):[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
+
+ESCALATION = "probabilistic-escalation-v1"
+ESCALATION_PROFILE = "builtin:" + ESCALATION
+ESCALATION_DEFAULTS = {
+    "probability": 0.1, "mode": "record-only", "seed": "organizer-default-v1",
+    "primary": {"profile": "builtin:single-v1"},
+    "escalation": {"profile": "builtin:math-decomposed-v1"},
+}
 
 
 def reference(value, namespace=None):
@@ -46,11 +54,22 @@ def _members(value):
         raise VerifierError("duplicate_judge_member")
 
 
-def selection(value, *, file_allowed=True):
+def selection(value, *, file_allowed=True, escalation_allowed=True):
     """Validate the selector independently of filesystem resolution."""
     if type(value) is dict and "path" in value and file_allowed:
         keys(value, {"path"})
         relative(value["path"])
+        return
+    if type(value) is dict and value.get("profile") == ESCALATION_PROFILE:
+        if not escalation_allowed:
+            raise VerifierError("nested_escalation_profile")
+        keys(value, {"profile"}, set(ESCALATION_DEFAULTS))
+        number(value.get("probability", 0.1), 0, 1)
+        if value.get("mode", "record-only") not in ("record-only", "override"):
+            raise VerifierError("escalation_mode")
+        text(value.get("seed", ESCALATION_DEFAULTS["seed"]), 256)
+        for child in ("primary", "escalation"):
+            selection(value.get(child, ESCALATION_DEFAULTS[child]), file_allowed=False, escalation_allowed=False)
         return
     if type(value) is dict and "profile" in value:
         keys(value, {"profile"}, {"catalogs", "add_members", "overrides", "max_regions"})
@@ -113,11 +132,22 @@ def _catalog(value, namespace, read):
     return personas, profiles
 
 
-def _resolve(raw, read, provider, limits):
+def _resolve(raw, read, provider, limits, *, check_budget=True):
     from .config import normalize_provider
     selection(raw)
     selected = loads(read(raw["path"])) if "path" in raw else raw
     selection(selected, file_allowed=False)
+    if selected.get("profile") == ESCALATION_PROFILE:
+        options = {**ESCALATION_DEFAULTS, **selected}
+        result = {"version": 1, "profile": ESCALATION_PROFILE, "protocol": ESCALATION,
+                  **{k: options[k] for k in ("probability", "mode", "seed")}}
+        for child in ("primary", "escalation"):
+            result[child] = _resolve(options[child], read, provider, limits, check_budget=False)
+        calls = minimum_calls(result["primary"])
+        if result["probability"] > 0:
+            calls += minimum_calls(result["escalation"])
+        _minimum_budget(calls, limits)
+        return result
     builtin_read = lambda path: utf8(read_bytes(DIRECTORY / relative(path), SOURCE_LIMITS["max_file_bytes"]))
     personas, profiles = _catalog(loads(builtin_read("catalog.json")), "builtin", builtin_read)
     for path in selected.get("catalogs", []):
@@ -166,18 +196,30 @@ def _resolve(raw, read, provider, limits):
           or stages.count("planning") != int(decomposed) or stages.count("region") != int(decomposed)):
         raise VerifierError("committee_required_stages")
     result = {"version": 1, "profile": profile_id, "protocol": profile["protocol"], "members": members}
-    calls = list(members)
     if decomposed:
-        maximum = profile.get("max_regions", DEFAULT_MAX_REGIONS)
-        result["max_regions"] = maximum
-        worker = next(m for m in members if m["stage"] == "region")
-        calls.extend([worker] * (maximum - 1))
-    # Reserve one complete initial review, including the conditional defender
-    # and every possible region, before making a paid planning request.
+        result["max_regions"] = profile.get("max_regions", DEFAULT_MAX_REGIONS)
+    if check_budget:
+        _minimum_budget(minimum_calls(result), limits)
+    return result
+
+
+def minimum_calls(committee):
+    calls = list(committee["members"])
+    if committee["protocol"] == DECOMPOSED:
+        worker = next(m for m in calls if m["stage"] == "region")
+        calls.extend([worker] * (committee["max_regions"] - 1))
+    return calls
+
+
+def children(committee):
+    return [committee["primary"], committee["escalation"]] if committee["protocol"] == ESCALATION else [committee]
+
+
+def _minimum_budget(calls, limits):
+    # Include conditional defense and the full configured region cap.
     if (len(calls) > limits["total_provider_requests"]
             or sum(m["provider"]["max_completion_tokens"] for m in calls) > limits["total_review_tokens"]):
         raise VerifierError("committee_minimum_budget")
-    return result
 
 
 def load_judging(root, raw, candidate, provider, limits):
@@ -213,4 +255,6 @@ def verify_judging(value, raw, provider, limits):
 
 def catalog():
     """Public packaged definitions for authoring and discovery."""
-    return loads(read_bytes(DIRECTORY / "catalog.json", SOURCE_LIMITS["max_file_bytes"]))
+    value = loads(read_bytes(DIRECTORY / "catalog.json", SOURCE_LIMITS["max_file_bytes"]))
+    value["profiles"].append({"id": ESCALATION_PROFILE, "protocol": ESCALATION, **ESCALATION_DEFAULTS})
+    return value

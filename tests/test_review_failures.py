@@ -18,7 +18,7 @@ from llm_verifier.files import read_json, write_json
 from llm_verifier.jsonutil import canonical, loads, sha
 from llm_verifier.provider import HttpResponse, HttpTransport, OpenAI
 from llm_verifier.simulation import ScriptedProvider
-from tests.support import completion, example, scripted_model
+from tests.support import request_parts, completion, example, scripted_model
 from tests.test_background import native, response
 from tests.test_committees import committee, report
 from tests.test_regions import PROFILE, outputs, plan_for
@@ -48,21 +48,25 @@ class ReviewFailures(unittest.TestCase):
             raw = '{"regions":[]}'
             envelope = loads(completion({}).body)
             envelope['choices'][0]['message']['content'] = raw
+            def transport(body, *args):
+                _, member, _ = request_parts(body)
+                return (HttpResponse(200, canonical(envelope)) if member['stage'] == 'planning'
+                        else completion(report()))
             with patch.dict(os.environ, {'OPENAI_API_KEY': 'test-key'}), patch.object(
-                    HttpTransport, 'request', return_value=HttpResponse(200, canonical(envelope))) as http:
+                    HttpTransport, 'request', side_effect=transport) as http:
                 code, stdout, stderr = cli_review(root, intake, initial)
             self.assertEqual(code, 2)
             self.assertIn('committee_invalid_review_region_plan_count', stderr)
             self.assertNotIn(raw, stdout + stderr)
-            http.assert_called_once()
+            self.assertEqual(http.call_count, 2)
             self.assertFalse((root / 'review.json').exists())
             failure = read_json(root / 'failure.json')
             data = verify_envelope(failure, 'review_failure', intake, [intake, initial])
             self.assertFalse(data['publishable'])
             self.assertFalse(failure['simulation'])
             self.assertEqual(data['phase'], 'initial')
-            self.assertEqual(data['calls'][0]['stage'], 'planning')
-            event = data['calls'][0]['events'][0]
+            self.assertEqual([c['stage'] for c in data['calls']], ['review', 'planning'])
+            event = data['calls'][1]['events'][0]
             self.assertEqual(event['response']['outputs'], [raw])
             self.assertEqual(event['response']['usage']['total_tokens'], 150)
             self.assertEqual(event['response']['id'], 'chatcmpl-test')
@@ -117,17 +121,26 @@ class ReviewFailures(unittest.TestCase):
         with committee(judging=PROFILE) as (root, _, intake):
             initial = pipeline.execute(intake)
             plan = plan_for(intake)
-            transport = [completion(plan), completion(report()), RuntimeError('Authorization: secret-key'),
-                         HttpResponse(500, b'provider secret-key')]
+            attempts = []
+            def transport(body, *args):
+                _, member, context = request_parts(body)
+                if member['stage'] == 'planning': return completion(plan)
+                if member['stage'] == 'review': return completion(report())
+                if context['region']['id'] == plan['regions'][0]['id']:
+                    attempts.append(1)
+                    if len(attempts) == 1: raise RuntimeError('Authorization: secret-key')
+                    return HttpResponse(500, b'provider secret-key')
+                from tests.test_regions import region_report
+                return completion(region_report(context['region']))
             with patch.dict(os.environ, {'OPENAI_API_KEY': 'secret-key'}), patch.object(
                     HttpTransport, 'request', side_effect=transport) as http, patch('llm_verifier.provider.time.sleep'):
                 code, stdout, stderr = cli_review(root, intake, initial)
             self.assertEqual(code, 2)
-            self.assertEqual(http.call_count, 4)
+            self.assertEqual(http.call_count, 5)
             failure = read_json(root / 'failure.json')
             calls = failure['data']['calls']
-            self.assertEqual([r['stage'] for r in calls], ['planning', 'review', 'region'])
-            self.assertEqual(json.loads(calls[0]['events'][0]['response']['outputs'][0]), plan)
+            self.assertEqual([r['stage'] for r in calls], ['review', 'planning', 'region', 'region'])
+            self.assertEqual(json.loads(calls[1]['events'][0]['response']['outputs'][0]), plan)
             self.assertEqual(calls[0]['events'][0]['response']['usage']['total_tokens'], 150)
             self.assertEqual(calls[1]['events'][0]['response']['usage']['total_tokens'], 150)
             self.assertEqual([v['attempt'] for v in calls[2]['events'] if 'attempt' in v], [1, 2])
@@ -388,9 +401,9 @@ p._http_worker()
             self.assertIn('committee_invalid_review_region_review_incomplete', stderr)
             failure = read_json(root / 'failure.json')['data']
             self.assertEqual(failure['error'], 'committee_invalid_review_region_review_incomplete')
-            self.assertEqual(failure['calls'][-1]['region_id'], plan['regions'][0]['id'])
+            self.assertEqual(failure['calls'][2]['region_id'], plan['regions'][0]['id'])
 
-    def test_workflow_retains_failure_artifacts_separately_on_failed_reviews(self):
+    def test_workflow_retains_failure_artifacts_separately_including_failed_audits(self):
         from tests.support import REPO
         workflow = (REPO / '.github/workflows/verify.yml').read_text()
         for phase, next_job, folder in [('initial', 'followup', 'review-failure'),
@@ -398,7 +411,8 @@ p._http_worker()
             job = workflow.split('  ' + phase + '_review:', 1)[1].split('  ' + next_job + ':', 1)[0]
             self.assertNotIn('actions/checkout', job)
             self.assertIn('--failure-out "$RUNNER_TEMP/' + folder + '/failure.json"', job)
-            self.assertIn("always() && steps.review.outcome == 'failure'", job)
+            self.assertIn("if: ${{ always() }}", job)
+            self.assertNotIn("steps.review.outcome == 'failure'", job)
             self.assertIn('name: llmv-' + phase + '-review-failure', job)
             self.assertIn('if-no-files-found: ignore', job)
             self.assertEqual(job.count('id: review'), 1)

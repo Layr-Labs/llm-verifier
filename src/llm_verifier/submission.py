@@ -16,7 +16,7 @@ def preflight_manifest(files, config, *, committee=None):
     effective_files, audit = preprocess(files, config)
     manifest = manifest_from(effective_files, config["limits"], config.get("checkers", []),
                              allow_structured=structured_enabled(config))
-    validate_objective_claims(config["objectives"], manifest["claims"])
+    validate_objective_claims(config["objectives"], manifest["claims"], effective_files)
     if ("judging" in config) != (committee is not None):
         raise VerifierError("judge_configuration_required")
     # Use the actual member formats, including roles that cannot request inputs.

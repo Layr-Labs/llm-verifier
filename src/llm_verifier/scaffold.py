@@ -238,7 +238,7 @@ def check(root):
     files = snapshot(Path(root) / "submission", effective["config"]["limits"])
     submission, audit = preflight_manifest(files, effective["config"], committee=effective.get("judging", {}).get("committee"))
     config = effective["config"]
-    validate_objective_claims(config["objectives"], submission["claims"])
+    validate_objective_claims(config["objectives"], submission["claims"], files)
     # Strict validation at trust boundaries; unrelated authoring files are not
     # part of the evaluation and do not need a second repository inventory.
     cases = checker_cases(root, effective)

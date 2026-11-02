@@ -47,7 +47,10 @@ accepted declared claims, not incidental proof/reason prose or current scores
 and checker passes. Familiar standard results require the correct variant and
 hypotheses. Reproduce and justify any unfamiliar or uncertain material external
 premise in supplied evidence; a citation or URL alone is insufficient. The
-configured judge has no web/PDF retrieval.
+configured judge has no web/PDF retrieval. If an objective's `score_source` has
+a `count`, the claim's score must be exactly the verifier's own count of your
+submission, by the unit and rule the challenge states; `check` refuses any other
+number, so recount after every edit.
 
 ## Validate and run the final candidate
 

@@ -63,7 +63,8 @@ source binding do not establish mathematical truth: that remains model review.
 
 ## Provenance and extraction
 
-Each record uses exactly the existing objective-source formula:
+Each record uses the objective-source formula with the source `{"claim": index}`
+(the source of a counted objective also carries its `count`, so its digest differs):
 
 ```python
 source_sha256 = digest({"source": {"claim": index}, "files": digest(intake["data"]["files"])})

@@ -61,6 +61,15 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 31
+                  },
+                  "count": {
+                    "enum": [
+                      "words",
+                      "characters",
+                      "lines",
+                      "bytes"
+                    ],
+                    "description": "The score is this count of the entry, taken by code; a claim that differs is refused. See authoring.md#counted-scores."
                   }
                 }
               },

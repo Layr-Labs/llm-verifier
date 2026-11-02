@@ -22,13 +22,40 @@ configured. Positive infinity retains exact records with null numeric scores
 because Yukon cannot order infinity.
 """
 
+COUNT_INSTRUCTIONS = """A score_source with a count is counted by the verifier's code over every submitted file
+except submission.json, and the declared score has been checked equal to that count. Do not
+recount it, and do not accept or reject a claim over that number. Text in submission.json is
+not counted: an argument moved there, or words joined by characters that are not white space,
+to lower the count does not establish the claim as written.
+"""
+
+
 def review_instructions(config):
+    text = REVIEW_INSTRUCTIONS
     if config.get("acceptance_policy", "atomic-claims-v1") == "exploratory-v1":
-        return REVIEW_INSTRUCTIONS.replace(
+        text = text.replace(
             "ALL original submission.claims are established as written",
             "ALL original submission.claims meet exploratory-v1 exactly as written"
         ).replace("atomic validity", "whole-submission exploratory validity")
-    return REVIEW_INSTRUCTIONS
+    return text + (COUNT_INSTRUCTIONS if any("count" in o.get("score_source", {}) for o in config["objectives"]) else "")
+
+
+# A length that code can count from the entry is counted here, under one written rule
+# per unit (docs/authoring.md#counted-scores). The rule reads each file's decoded text;
+# the entry's count is the sum over every submitted file except the manifest.
+WORD = re.compile(r"[^\t-\r \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+")
+COUNTS = {
+    "words": lambda text: len(WORD.findall(text)),
+    "characters": len,
+    "lines": lambda text: text.count("\n") + (1 if text and not text.endswith("\n") else 0),
+    "bytes": lambda text: len(text.encode("utf-8")),
+}
+
+
+def counted(unit, files):
+    """The entry's exact count as a canonical rational, from code alone."""
+    total = sum(COUNTS[unit](record["text"]) for path, record in files.items() if path != "submission.json")
+    return {"numerator": str(total), "denominator": "1"}
 
 
 def canonical_score(value):
@@ -105,7 +132,7 @@ def score_bound_status(record, objective):
     return "ready"
 
 
-def validate_objective_claims(objectives, claims):
+def validate_objective_claims(objectives, claims, files):
     for objective in objectives:
         source = objective.get("score_source", {})
         if "claim" not in source or source["claim"] >= len(claims):
@@ -118,6 +145,9 @@ def validate_objective_claims(objectives, claims):
         status = score_bound_status(claim["score"], objective)
         if status != "ready":
             raise VerifierError("score_" + status)
+        # A claim that misstates the entry's own length is false: refused, never corrected.
+        if "count" in source and claim["score"] != counted(source["count"], files):
+            raise VerifierError("score_count_mismatch")
 
 
 def validate_sources(objectives, checkers):
@@ -138,8 +168,10 @@ def validate_sources(objectives, checkers):
     registry = {c["id"]: c for c in checkers}
     for source in sources:
         if type(source) is dict and "claim" in source:
-            keys(source, {"claim"})
+            keys(source, {"claim"}, {"count"})
             integer(source["claim"], 0, 31)
+            if "count" in source and (type(source["count"]) is not str or source["count"] not in COUNTS):
+                raise VerifierError("unsupported_count_unit")
         else:
             keys(source, {"check", "field"})
             if type(source["check"]) is not str or source["check"] not in registry:
@@ -154,7 +186,7 @@ def validate_sources(objectives, checkers):
 
 
 def bindings(data, runs, required):
-    validate_objective_claims(data["effective"]["config"]["objectives"], data["manifest"]["claims"])
+    validate_objective_claims(data["effective"]["config"]["objectives"], data["manifest"]["claims"], data["files"])
     result = []
     by_run = {run["id"]: run for run in runs}
     by_check = {check["check"]: check for check in required}
@@ -170,7 +202,7 @@ def bindings(data, runs, required):
             claims = data["manifest"]["claims"]
             claim = claims[source["claim"]] if source["claim"] < len(claims) else None
             if type(claim) is dict and "score" in claim:
-                record = claim["score"]
+                record = counted(source["count"], data["files"]) if "count" in source else claim["score"]
                 value = score_value(record)
                 status = "ready"
         else:

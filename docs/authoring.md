@@ -147,6 +147,41 @@ The checker must be `required_for_score`; only passing, schema-valid results for
 the submission's exact declared inputs qualify. Conflicting canonical retries
 make numeric scoring unavailable; diagnostic inputs cannot replace the declared witness.
 
+### Counted scores
+
+When the score is a length that code can count from the entry itself, add `count`
+to the claim source. The verifier then counts the entry, and neither the claim's score
+nor the reviewer's own count sets the score:
+
+```json
+"score_source": {"claim": 0, "count": "words"}
+```
+
+The entry is every file in the submission except `submission.json`, so words cannot be
+hidden in a second file and the manifest's statement is not counted. The count is the
+sum over those files, by the rule for its unit:
+
+| Unit | Count |
+| --- | --- |
+| `words` | Maximal runs of characters other than white space. White space is U+0009 to U+000D, U+0020, U+0085, U+00A0, U+1680, U+2000 to U+200A, U+2028, U+2029, U+202F, U+205F and U+3000 |
+| `characters` | Unicode code points, including spaces and line breaks; a CRLF counts as two |
+| `lines` | Line feeds, plus one when a non-empty file does not end with one |
+| `bytes` | UTF-8 bytes |
+
+The claim must declare exactly that count as its score. If it does not, `check`, intake
+and artifact validation refuse the entry with `score_count_mismatch` before any model
+call, as they refuse an out-of-range score. A claim that misstates the count is false,
+and a false claim makes the submission invalid, so the score is refused, not corrected.
+The score and its record are the verifier's count; the check guarantees the claim equals
+it. An unscored claim declares no number and needs no count.
+
+State the unit and its rule in `rules.md`, because a participant must know how to count.
+The rule counts what is written, not what is meant: words joined by any character that is
+not white space (an underscore, a zero-width space) count as one word, and text in
+`submission.json` is not counted at all. The reviewer is told that the count is checked, that
+it must not recount it, and that an argument moved into the manifest or words joined to lower
+the count do not establish the claim. Say so in `rules.md` too.
+
 ### Score availability
 
 Every declared claim must be established exactly as written for `valid: true`.

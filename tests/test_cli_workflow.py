@@ -148,7 +148,12 @@ class Workflow(unittest.TestCase):
                 self.assertNotIn('llm-verifier experiments', body)
                 self.assertNotIn('llm-verifier followup', body)
                 self.assertNotIn('actions/checkout', body)
+                self.assertIn('    environment: ${{ inputs.environment }}\n', body)
+                self.assertIn('[[ -n "$OPENAI_API_KEY" ]] || {', body)
+            else:
+                self.assertNotIn('environment:', body)
         self.assertEqual(seen, {'initial_review','final_review'})
+        self.assertIn("      environment:\n        description:", text)
         caller = (REPO/'src/llm_verifier/templates/benchmark.yml').read_text()
         self.assertIn('OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}', caller)
         self.assertNotIn('OPENROUTER', text + caller)

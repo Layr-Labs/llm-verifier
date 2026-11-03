@@ -27,6 +27,10 @@ on:
       yukon_evaluation:
         type: string
         default: ''
+      environment:
+        description: "Environment whose OPENAI_API_KEY the review jobs read; empty uses the caller-passed secret"
+        type: string
+        default: ''
     outputs:
       helper_base64:
         description: "Trusted standalone transfer helper, base64 encoded"
@@ -63,7 +67,7 @@ on:
         value: ${{ jobs.initial_review.outputs.kind }}
     secrets:
       OPENAI_API_KEY:
-        required: true
+        required: false
       VERIFIER_CHECKOUT_TOKEN:
         required: false
 
@@ -227,6 +231,7 @@ jobs:
   initial_review:
     name: Benchmark initial judge or committee (no candidate execution)
     needs: [prepare, experiments]
+    environment: ${{ inputs.environment }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -278,6 +283,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          [[ -n "$OPENAI_API_KEY" ]] || { echo "::error::The judge key is empty. Define OPENAI_API_KEY in the environment named by the environment input (or as a caller secret) and pass it by name under the caller's secrets."; exit 1; }
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-initial --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --out "$RUNNER_TEMP/review/review.json" --failure-out "$RUNNER_TEMP/review-failure/failure.json"
       - id: phase_archive
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -364,6 +370,7 @@ jobs:
     name: Benchmark final judge or committee (no further requests)
     needs: [prepare, experiments, initial_review, followup]
     if: needs.initial_review.outputs.kind == 'followup'
+    environment: ${{ inputs.environment }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -416,6 +423,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
+          [[ -n "$OPENAI_API_KEY" ]] || { echo "::error::The judge key is empty. Define OPENAI_API_KEY in the environment named by the environment input (or as a caller secret) and pass it by name under the caller's secrets."; exit 1; }
           "$RUNNER_TEMP/llmv-env/bin/llm-verifier" review-final --intake "$RUNNER_TEMP/intake/intake.json" --initial "$RUNNER_TEMP/initial/initial.json" --initial-review "$RUNNER_TEMP/review/review.json" --followup "$RUNNER_TEMP/followup/followup.json" --out "$RUNNER_TEMP/final-review/final-review.json" --failure-out "$RUNNER_TEMP/final-review-failure/failure.json"
       - id: phase_archive
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

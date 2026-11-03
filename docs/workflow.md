@@ -53,6 +53,28 @@ its repository's **Actions → General → Access** setting must also allow the
 caller repository. A checkout token does not grant reusable-workflow access;
 `llm-verifier check` validates local files, not these GitHub settings.
 
+To keep the judge key out of reach of arbitrary branches, store `OPENAI_API_KEY`
+as an [environment secret](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)
+and name that environment with the optional `environment` input. Only the two
+review jobs declare it, so its deployment branch policy gates them, and they read
+the environment's value. GitHub still requires the caller to pass the secret by
+name, even though the caller job itself has no environment:
+
+```yaml
+jobs:
+  verify:
+    uses: Layr-Labs/llm-verifier/.github/workflows/verify.yml@<sha>
+    with:
+      environment: scoring
+      # ...existing inputs...
+    secrets:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+```
+
+With `environment` empty (the default) the review jobs use no environment and
+read the caller-passed secret, as before. A review step whose key resolves empty
+fails with an error instead of calling the judge.
+
 The generated caller declares string dispatch input `yukon_evaluation`; the wrapper
 passes it to `YUKON_EVALUATION` at intake and snapshots the exact selected policies
 and fields. No artifact or credential is sent by the candidate. Protect all

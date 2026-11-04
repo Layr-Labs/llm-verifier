@@ -263,3 +263,7 @@ Accepted-submission references require explicit, original-candidate
 [submission admission](docs/submission-admission.md). Missing/null defaults off.
 The existing owner API updates future candidates per Pareto track without changing
 the pinned verifier or starting a reorg; retries retain the original policy.
+
+## Retained-result score derivation
+
+For protected historical score-only jobs, [score-derivation-v1](docs/score-derivation.md) reviews a new structured representation against authenticated retained full claims. It preserves original validity and policy, uses an explicitly bounded single reviewer, and emits separate provenance rather than a new accepted claim. The opt-in workflow, plan format, exact source citations, receipt-only delivery and offline harness are documented separately; ordinary review and prior-result reuse are unchanged.

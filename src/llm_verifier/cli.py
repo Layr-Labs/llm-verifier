@@ -95,10 +95,15 @@ def parser():
         cmd.add_argument("--" + name, required=True)
     cmd.add_argument("--evaluation", default=os.environ.get("YUKON_EVALUATION"))
     cmd.add_argument("--accepted-results-context", default=os.environ.get("YUKON_ACCEPTED_RESULTS"))
+    from .derivation_cli import add_parsers
+    add_parsers(sub)
     return p
 
 
 def run(args):
+    from .derivation_cli import COMMANDS, run as run_derivation
+    if args.command in COMMANDS:
+        return run_derivation(args)
     if args.command == "judges":
         from .judges import catalog
         from .jsonutil import canonical
@@ -213,7 +218,7 @@ def main(argv=None):
     try:
         run(args)
         if args.command not in {"inspect-results", "judges"}:
-            print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command == "simulate" else ""))
+            print("llm-verifier: completed" + (" (SIMULATION ONLY)" if args.command in {"simulate", "simulate-derivation"} else ""))
         return 0
     except VerifierError as exc:
         # Diagnostics contain static codes and escaped field/path names, never input values or provider text.

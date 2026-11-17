@@ -6,10 +6,10 @@ import tempfile
 import time
 import unittest
 
-from llm_verifier.artifacts import intake_snapshot
+from llm_verifier.artifacts import intake_snapshot, verify_intake
 from llm_verifier.config import load_config, normalize
 from llm_verifier.errors import VerifierError
-from llm_verifier.files import read_bytes, read_json, relative, snapshot, write_json
+from llm_verifier.files import read_bytes, read_json, relative, snapshot, validate_files, write_json
 from llm_verifier.input_schema import validate_schema, validate_value
 from llm_verifier.jsonutil import canonical, digest, loads
 from tests.support import REPO, example
@@ -71,6 +71,57 @@ class Boundaries(unittest.TestCase):
             with self.assertRaisesRegex(VerifierError,'protected_path'):load_config(root,'submission/config.json','submission')
             original['rules_path']='submission/proof.md';write_json(root/'verifier.json',original)
             with self.assertRaisesRegex(VerifierError,'protected_path'):load_config(root,'verifier.json','submission')
+
+    def test_one_mib_file_limit_is_opt_in_and_bounded(self):
+        with example() as (root, effective, _):
+            config = copy.deepcopy(effective['config'])
+            config['limits'].pop('max_file_bytes')
+            config['limits'].pop('max_submission_bytes')
+            defaults = normalize(config)['limits']
+            self.assertEqual(defaults['max_file_bytes'], 65536)
+            self.assertEqual(defaults['max_submission_bytes'], 262144)
+            candidate = root / 'boundary'
+            candidate.mkdir()
+            source = candidate / 'large.txt'
+            source.write_bytes(b'a' * 1048576)
+            with self.assertRaisesRegex(VerifierError, 'file_byte_limit'):
+                snapshot(candidate, defaults)
+            config['limits'].update(max_file_bytes=1048576, max_submission_bytes=1048576)
+            limits = normalize(config)['limits']
+            files = snapshot(candidate, limits)
+            self.assertEqual(files['large.txt']['size'], 1048576)
+            validate_files(files, limits)
+            source.write_bytes(b'a' * 1048577)
+            with self.assertRaisesRegex(VerifierError, 'file_byte_limit'):
+                snapshot(candidate, limits)
+            for field in ('max_file_bytes', 'max_submission_bytes'):
+                invalid = copy.deepcopy(config)
+                invalid['limits'][field] = 1048577
+                with self.subTest(field=field), self.assertRaises(VerifierError):
+                    normalize(invalid)
+
+    def test_large_file_intake_keeps_total_package_limit(self):
+        def configure(config):
+            config.setdefault('limits', {}).update(
+                max_file_bytes=1048576, max_submission_bytes=1048576)
+        with example(mutate=configure) as (root, effective, original):
+            candidate = root / 'submission'
+            source = candidate / 'proof.md'
+            other_bytes = sum(record['size'] for path, record in original['data']['files'].items()
+                              if path != 'proof.md')
+            source.write_bytes(b'a' * (1048576 - other_bytes))
+            intake = intake_snapshot(effective, candidate)
+            files = verify_intake(intake)['files']
+            self.assertGreater(files['proof.md']['size'], 262144)
+            self.assertEqual(sum(record['size'] for record in files.values()), 1048576)
+            with source.open('ab') as stream:
+                stream.write(b'a')
+            with self.assertRaisesRegex(VerifierError, 'file_byte_limit'):
+                intake_snapshot(effective, candidate)
+            oversized = snapshot(candidate, {**effective['config']['limits'],
+                                             'max_submission_bytes': 1048577})
+            with self.assertRaisesRegex(VerifierError, 'submission_byte_limit'):
+                validate_files(oversized, effective['config']['limits'])
 
     def test_schema_references_unknown_types_and_unbounded_inputs(self):
         invalid=[{'$ref':'https://example.invalid/schema'}, {'type':['integer','null']},

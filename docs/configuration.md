@@ -56,7 +56,7 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 
 | Limit | Default | Hard maximum |
 | --- | ---: | ---: |
-| Files / per-file bytes / total submission bytes | 32 / 65,536 / 262,144 | 128 / 262,144 / 1,048,576 |
+| Files / per-file bytes / total submission bytes | 32 / 65,536 / 262,144 | 128 / 1,048,576 / 1,048,576 |
 | Initial runs / follow-up runs | 3 / 3 | 12 / 8 |
 | Per-run / initial-round / follow-up-round / total seconds | 20 / 60 / 60 / 60 | 120 / 600 / 600 / 600 |
 | Stdout / stderr bytes per run | 65,536 each | 262,144 each |
@@ -64,6 +64,11 @@ All limits are integers, including CPU and seconds. Defaults and hard maxima:
 | Memory MiB / CPUs / processes / tmpfs MiB | 256 / 1 / 32 / 16 | 1024 / 4 / 128 / 64 |
 | Complete serialized prompt bytes | 2,097,152 | 8,388,608 |
 | Total review seconds / generation attempts across both reviews | 180 / 4 without `judging`; 1800 / 24 with `judging` | 2400 / 64 |
+
+Larger files require an explicit `limits.max_file_bytes` override. The total
+`limits.max_submission_bytes` cap applies independently to the combined size of
+all package files, including `submission.json`; increase it as needed within its hard
+maximum. Raising the per-file limit alone does not raise the total limit.
 
 With `judging`, the shared reserved completion-token budget defaults to 262,144
 and has a hard maximum of 2,097,152. Initial capacity must cover every member,

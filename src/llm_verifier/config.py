@@ -18,7 +18,7 @@ ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 # default, minimum, hard maximum. Time budgets reserve full allotted slots,
 # not observed fast completion, so a judge cannot buy unlimited cheap reruns.
 LIMITS = {
-    "max_files": (32, 1, 128), "max_file_bytes": (65536, 1, 262144),
+    "max_files": (32, 1, 128), "max_file_bytes": (65536, 1, 1048576),
     "max_submission_bytes": (262144, 1, 1048576),
     "max_initial_runs": (3, 0, 12), "max_followups": (3, 0, 8),
     "run_seconds": (20, 1, 120), "initial_seconds": (60, 1, 600),
